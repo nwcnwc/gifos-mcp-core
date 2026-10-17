@@ -9,8 +9,8 @@ It runs **on your own computer**. It starts a headless Chromium running GifOS, i
 from the GifOS app store, and drives it. Meetings stay peer to peer between the people in them. Transcripts stay
 on your computer. No GifOS account or API key is involved.
 
-> **Requires GifOS 0.9.23 or newer**, the release that ships the Meeting Bot store app. Until it is live on
-> gifos.app, point `GIFOS_URL` at a GifOS 0.9.23 site (see [Testing](#testing-instructions-for-marketplace-reviewers)).
+> **Requires GifOS 0.9.23b or newer**, the release that ships the Meeting Bot store app (control contract
+> version 2). Until it is live on gifos.app, point `GIFOS_URL` at a GifOS 0.9.23b site (see [Testing](#testing-instructions-for-marketplace-reviewers)).
 
 ## How it works
 
@@ -18,7 +18,7 @@ on your computer. No GifOS account or API key is involved.
 Grok Bot ──MCP (stdio)──▶ gifos-mcp ──▶ headless Chromium (one profile in ~/.gifos-mcp)
                                          └─ GifOS desktop
                                               ├─ Meeting Bot, running as the bot (RUN mode)
-                                              │    driven through its local control API, window.MeetingBot v1
+                                              │    driven through its local control API, window.MeetingBot v2
                                               └─ Offline Captions (Whisper), the speech-to-text provider
 ```
 
@@ -32,19 +32,19 @@ Grok Bot ──MCP (stdio)──▶ gifos-mcp ──▶ headless Chromium (one p
   writes down each participant who is unmuted, credited by name. It never writes down its own machine's
   microphone.
 - `get_transcript` reads the transcript straight from the bot. Meeting Bot's
-  [control contract](https://github.com/nwcnwc/gifos-apps-source/blob/meet-bot/meeting-bot/CONTROL.md) (version 1)
+  [control contract](https://github.com/nwcnwc/gifos-apps-source/blob/main/meeting-bot/CONTROL.md) (version 2)
   is the only interface this server relies on. The voice handoff is written up in
   [docs/MEETBOT-BRIDGE.md](docs/MEETBOT-BRIDGE.md).
 
 **The only AI in the meeting is Meet Bot.** This server launches the signed Meeting Bot app from the GifOS store
 in a headless browser and passes commands through `window.MeetingBot`. It does not join as a second participant.
-Meet Bot has two switches: respond to commands (on or off) and conversation voice
-(`none`, Grok Voice, or a local LLM with Kokoro). A local LLM is any OpenAI-compatible endpoint, with your own
+Meet Bot has two switches: respond to commands (on or off) and speak (on or off). Conversation voice
+(`none`, Grok Voice, or a local LLM with Kokoro) decides whether it speaks. A local LLM is any OpenAI-compatible endpoint, with your own
 key, or a provider app. The suggested default is xAI Grok (`grok-4.20-0309-non-reasoning`). On startup this
 server sets up Kokoro and installs the speech-to-text provider. When it hosts `smartest`, `tts`, or `stt`, it
 answers those provider calls itself. The page does not fetch them, and the key stays in this process.
-`set_voice` names the providers. It does not send the URL or the key. Until the app accepts the setting,
-the tool reports the gap and this server does not imitate speech.
+Every join (and `set_voice`) hands Meet Bot `{ respond_to_command, speak }` and nothing else: no URL, no model,
+no key. If the app refuses, `status` reports the gap and this server does not imitate speech.
 
 Your own assistant tails the live transcript (`gifos://meeting/{id}/transcript`, or `tail_transcript`) and can
 cut in with `say`, which Meet Bot speaks. After the meeting, that assistant does the notes, mail, and calendar
@@ -118,7 +118,7 @@ If your client can only reach MCP over HTTP, run `gifos-mcp --http [port]`. It l
 
 | Variable | Default | What it does |
 |---|---|---|
-| `GIFOS_URL` | `https://gifos.app` | The GifOS site to use. It must be 0.9.23 or newer with Meeting Bot in its store. |
+| `GIFOS_URL` | `https://gifos.app` | The GifOS site to use. It must be 0.9.23b or newer with Meeting Bot in its store. |
 | `GIFOS_RELAY` | GifOS default | A custom relay (`wss://…`) for self-hosted GifOS. It is added to meeting links. |
 | `GIFOS_BOT_NAME`, `GIFOS_BOT_PASSWORD` | generated | The Meeting Bot name and password. They derive the bot's secret admin meeting. The name is what participants see. If unset, a strong pair is generated once and kept in `GIFOS_MCP_HOME/bot.json` (mode 0600). A `bot.json` that cannot be read at start is kept as `bot.json.bad-<ms>` (mode 0600, logged) and a new pair is generated; it is not overwritten, so the old pair can be put back by hand. |
 | `GIFOS_STT_APP` | `offline-stt-whisper` | The store app that turns speech into text. `none` turns transcription off. |
@@ -250,7 +250,7 @@ The user tells Grok Bot: *"Set up a demo meeting with Alice and Bob at 5 PM, tak
 
 | Symptom | Fix |
 |---|---|
-| `The GifOS store at … has no "meeting-bot" app` | That GifOS is older than 0.9.23. Set `GIFOS_URL` to a 0.9.23 or newer site. |
+| `The GifOS store at … has no "meeting-bot" app` | That GifOS is older than 0.9.23b. Set `GIFOS_URL` to a 0.9.23b or newer site. |
 | `The store refused to install meeting-bot: Needs a newer GifOS` | Same cause: the site's build is older than the one Meeting Bot needs. |
 | `Meeting Bot did not start: A bot with this name and password is already running…` | Another `gifos-mcp` (or a Meeting Bot window) uses the same name and password. Stop it, or give this one its own `GIFOS_MCP_HOME` or `GIFOS_BOT_NAME`/`GIFOS_BOT_PASSWORD`. |
 | `get_transcript` stays at `(no transcript lines yet)` | Somebody has to speak with their mic on. The first transcription downloads the Whisper model (about 77 MB), which takes a minute. Run with `GIFOS_MCP_DEBUG=1` and call `status` to see each meeting's caption state. |
@@ -276,7 +276,7 @@ that a hosted model call stays in this process.
 `npm test` runs them with `TMPDIR` set to a fresh folder and fails if a test leaves anything in it. The
 Kokoro test keeps its ~90 MB of weights in `~/.cache/gifos-mcp-test-kokoro` between runs.
 
-**2. Try it live (needs GifOS 0.9.23 or newer on gifos.app).**
+**2. Try it live (needs GifOS 0.9.23b or newer on gifos.app).**
 
 1. Add the server to Grok Bot with the config above, or run `npx -y github:nwcnwc/gifos-mcp` under any MCP
    client.
@@ -292,10 +292,10 @@ Kokoro test keeps its ~90 MB of weights in `~/.cache/gifos-mcp-test-kokoro` betw
 
 ```sh
 git clone -b release/0.9.23 https://github.com/nwcnwc/gifos-app.git ../gifos-app
-git clone -b meet-bot https://github.com/nwcnwc/gifos-apps-source.git ../gifos-apps-source
+git clone https://github.com/nwcnwc/gifos-apps-source.git ../gifos-apps-source
 GIFOS_APP_DIR=../gifos-app \
 MEETING_BOT_SRC=../gifos-apps-source/meeting-bot \
-E2E_RELAY=wss://your-gifos-0.9.23-relay \
+E2E_RELAY=wss://your-gifos-0.9.23b-relay \
 E2E_SPEECH_WAV=/path/to/someone-speaking.wav \
 npm run test:e2e
 ```
