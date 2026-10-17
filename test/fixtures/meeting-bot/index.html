@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meeting Bot</title>
+<style>
+  :root { color-scheme: dark; --tap: 44px; --accent: #5ca0ff; }
+  body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: #101018; color: #eceef8; }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 18px 48px; }
+  h1 { font-size: 1.35rem; margin: 0 0 .2rem; }
+  h2 { font-size: 1rem; margin: 1.2rem 0 .4rem; }
+  h3 { font-size: .95rem; margin: 0 0 .45rem; }
+  .lead { color: #a8adc4; margin: 0 0 1rem; }
+  fieldset { border: 1px solid #2c2c44; border-radius: 10px; margin: 0 0 12px; padding: 12px; }
+  legend { padding: 0 6px; color: #c9d4ff; }
+  label { display: block; margin: 8px 0; }
+  input[type="text"], input[type="password"], textarea {
+    width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px 10px;
+    border-radius: 8px; border: 1px solid #3a3a55; background: #181826; color: inherit; font: inherit;
+    min-height: var(--tap);
+  }
+  textarea { min-height: 88px; resize: vertical; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  button, .btn {
+    min-height: var(--tap); min-width: var(--tap); padding: 8px 14px; border-radius: 8px;
+    border: 1px solid #3a3a55; background: transparent; color: #fff;
+    font: inherit; cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent); border-color: var(--accent); color: #071018; font-weight: 700;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  #warn { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #3a2a12; color: #ffd89a; display: none; }
+  #warn.show { display: block; }
+  #suggest { color: #b7f0c8; }
+  .meet { border: 1px solid #2c2c44; border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+  .meet b { color: #d7e8ff; }
+  #phase { color: #9ecbff; min-height: 1.2em; }
+  #ignored, #log, #xfer { white-space: pre-wrap; color: #c8c8dc; font-size: .92rem; }
+  .chips { color: #ffd23c; font-size: .85rem; }
+  /* One filled button per screen: Start while idle, Stop speaking while running, Create while controlling. */
+  body[data-phase="run"] #start,
+  body[data-phase="probe"] #start,
+  body[data-phase="control"] #start { background: transparent; border-color: #3a3a55; color: #c8c8dc; font-weight: 400; }
+  #create-go { background: transparent; border-color: #3a3a55; }
+  body[data-phase="control"] #create-go { background: var(--accent); border-color: var(--accent); color: #071018; font-weight: 700; }
+  .card { border: 1px solid #2c2c44; border-radius: 10px; padding: 12px; margin: 0 0 12px; background: #161622; }
+  .mode-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 0; flex-wrap: wrap; }
+  .ai-label { display: inline-flex; align-items: center; gap: 6px; }
+  .spark { width: 16px; height: 16px; color: #9ecbff; flex: 0 0 16px; }
+  .seg { display: flex; gap: 8px; flex-wrap: wrap; }
+  .seg button[aria-pressed="true"] { border-color: var(--accent); color: #d7e8ff; }
+  .switch[aria-pressed="true"] { border-color: var(--accent); color: #d7e8ff; }
+  #ops-stop { width: 100%; }
+  .ear { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #181826; min-height: var(--tap); display: flex; align-items: center; }
+  .ear.speaking { color: #b7f0c8; }
+  .ear.listening { color: #9ecbff; }
+  .tail, .cmds, .errs { margin: 0; padding-left: 1.1rem; }
+  .muted { color: #a8adc4; }
+  .person { display: inline-block; margin: 2px 6px 2px 0; }
+</style>
+<main>
+  <h1>Meeting Bot</h1>
+  <p class="lead">RUN is this computer's bot. CONTROL drives that bot from here, with the same name and password.</p>
+  <div id="warn"></div>
+  <p id="suggest"></p>
+  <fieldset id="launch">
+    <legend>Launch</legend>
+    <div class="row">
+      <label><input type="radio" name="mode" id="mode-run" value="run" checked> RUN — be the bot</label>
+      <label><input type="radio" name="mode" id="mode-control" value="control"> CONTROL — drive the bot</label>
+    </div>
+    <label>Bot name <input id="bot-name" type="text" autocomplete="off" maxlength="40"></label>
+    <label>Password <input id="bot-pass" type="password" autocomplete="off"></label>
+    <label id="rules-label">Auto-join links (one per line)
+      <textarea id="rules" placeholder="https://…/run.html#v=…"></textarea>
+    </label>
+    <label><input type="checkbox" id="override"> Start anyway if another bot is already running</label>
+    <p><button id="start" class="primary" type="button">Start</button> <button id="fill" type="button">Suggest a name</button></p>
+    <p id="phase"></p>
+  </fieldset>
+  <section id="runbox" hidden>
+    <h2>This bot</h2>
+    <ul id="run-meetings"></ul>
+    <section id="ops" aria-label="Operator status">
+      <h2>Operator</h2>
+      <div class="card" id="ops-meetings"></div>
+      <div class="card">
+        <h3>Modes</h3>
+        <div class="mode-row">
+          <span>Respond to commands</span>
+          <button type="button" id="ops-commands" class="switch" aria-pressed="false">Off</button>
+        </div>
+        <div class="mode-row">
+          <span class="ai-label">
+            <svg class="spark" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0l1.1 4.6L14 6l-4.9 1.3L8 12l-1.1-4.7L2 6l4.9-1.4z"/></svg>
+            Speak with Smartest
+          </span>
+          <button type="button" id="ops-speak" class="switch" aria-pressed="false">Off</button>
+        </div>
+        <div class="mode-row">
+          <span>Listen and write the room down</span>
+          <button type="button" id="ops-listen" class="switch" aria-pressed="false">Off</button>
+        </div>
+        <p id="ops-providers" class="muted">Conversation uses Smartest.</p>
+        <p><button type="button" id="ops-ai">AI settings</button></p>
+      </div>
+      <p id="ops-ear" class="ear">Quiet</p>
+      <div class="card">
+        <h3>Transcript</h3>
+        <div id="ops-tail"></div>
+      </div>
+      <div class="card">
+        <h3>Meeting chat</h3>
+        <div id="ops-chat"></div>
+      </div>
+      <div class="card">
+        <h3>Recent commands</h3>
+        <ol id="ops-cmds" class="cmds"></ol>
+      </div>
+      <div class="card">
+        <h3>Errors</h3>
+        <div id="ops-errors"></div>
+      </div>
+      <button type="button" id="ops-stop" class="primary">Stop speaking</button>
+    </section>
+  </section>
+  <section id="ctrl" hidden>
+    <h2>Control</h2>
+    <p><button id="list-go" type="button">Refresh list</button> <button id="create-go" type="button">Create a meeting</button></p>
+    <div id="ctrl-meetings"></div>
+    <label>Join a meeting <input id="join-link" type="text" placeholder="Paste a meeting link"></label>
+    <p><button id="join-go" type="button">Join</button></p>
+    <h2>Downloaded</h2>
+    <div id="xfer"></div>
+  </section>
+  <h2>Activity</h2>
+  <div id="log"></div>
+  <div id="ignored"></div>
+</main>
+<script src="protocol.js"></script>
+<script src="voice.js"></script>
+<script src="app.js"></script>
