@@ -1,0 +1,982 @@
+
+> gifos-mcp@0.4.0 test
+> node test/unit/run.js test/unit/config.test.js test/unit/tools.test.js test/unit/http.test.js test/unit/voice.test.js test/unit/providers.test.js test/unit/invite.test.js test/unit/kokoro.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/stage-a.test.js test/unit/stage-b.test.js test/unit/e2e-work.test.js test/unit/meetbot-reply.test.js
+
+TAP version 13
+# Subtest: an OpenAI voice name such as alloy is spoken with the Kokoro default and lands on the transcript
+ok 1 - an OpenAI voice name such as alloy is spoken with the Kokoro default and lands on the transcript
+  ---
+  duration_ms: 7.996168
+  type: 'test'
+  ...
+# Subtest: a Kokoro voice the engine actually has is left alone
+ok 2 - a Kokoro voice the engine actually has is left alone
+  ---
+  duration_ms: 0.386896
+  type: 'test'
+  ...
+# Subtest: a Piper stand-in maps an OpenAI voice name to its configured voice
+ok 3 - a Piper stand-in maps an OpenAI voice name to its configured voice
+  ---
+  duration_ms: 0.687512
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:40.958Z meetings.json could not be read; kept as meetings.json.bad-1792276840958, starting with no meetings.
+# [gifos-mcp] 2026-10-17T22:40:40.961Z bot.json could not be read; kept as bot.json.bad-1792276840961, generating a new bot name and password.
+# Subtest: defaults
+ok 4 - defaults
+  ---
+  duration_ms: 3.465028
+  type: 'test'
+  ...
+# Subtest: meeting voice is a Meet Bot setting, and the public view hides the endpoint
+ok 5 - meeting voice is a Meet Bot setting, and the public view hides the endpoint
+  ---
+  duration_ms: 1.505607
+  type: 'test'
+  ...
+# Subtest: credential rules match the Meeting Bot app
+ok 6 - credential rules match the Meeting Bot app
+  ---
+  duration_ms: 2.000088
+  type: 'test'
+  ...
+# Subtest: generated credentials persist with mode 0600; env wins and is checked
+ok 7 - generated credentials persist with mode 0600; env wins and is checked
+  ---
+  duration_ms: 2.178713
+  type: 'test'
+  ...
+# Subtest: rooms and links
+ok 8 - rooms and links
+  ---
+  duration_ms: 5.19344
+  type: 'test'
+  ...
+# Subtest: a restart puts live meetings back to scheduled
+ok 9 - a restart puts live meetings back to scheduled
+  ---
+  duration_ms: 1.213298
+  type: 'test'
+  ...
+# Subtest: an unreadable meetings.json is kept aside, not overwritten by the next save
+ok 10 - an unreadable meetings.json is kept aside, not overwritten by the next save
+  ---
+  duration_ms: 2.963036
+  type: 'test'
+  ...
+# Subtest: an unreadable bot.json is kept aside, not overwritten by a fresh pair
+ok 11 - an unreadable bot.json is kept aside, not overwritten by a fresh pair
+  ---
+  duration_ms: 1.406923
+  type: 'test'
+  ...
+# Subtest: a meetings save cut short keeps the last good meetings.json
+ok 12 - a meetings save cut short keeps the last good meetings.json
+  ---
+  duration_ms: 2.720366
+  type: 'test'
+  ...
+# Subtest: an event appended after a torn last line survives a restart and its seq is not reused
+ok 13 - an event appended after a torn last line survives a restart and its seq is not reused
+  ---
+  duration_ms: 1.822209
+  type: 'test'
+  ...
+# Subtest: run.js removes its work folder when setup fails
+ok 14 - run.js removes its work folder when setup fails
+  ---
+  duration_ms: 935.008041
+  type: 'test'
+  ...
+# Subtest: load.js removes its work folder when setup fails
+ok 15 - load.js removes its work folder when setup fails
+  ---
+  duration_ms: 775.714338
+  type: 'test'
+  ...
+# Subtest: stage-b.js removes its work folder when setup fails
+ok 16 - stage-b.js removes its work folder when setup fails
+  ---
+  duration_ms: 750.596461
+  type: 'test'
+  ...
+# Subtest: known whisper phrases on low-energy audio are dropped
+ok 17 - known whisper phrases on low-energy audio are dropped
+  ---
+  duration_ms: 5.074166
+  type: 'test'
+  ...
+# Subtest: hosted captions drop a silent-tail hallucination
+ok 18 - hosted captions drop a silent-tail hallucination
+  ---
+  duration_ms: 0.958664
+  type: 'test'
+  ...
+# Subtest: a caption that is only a silent-tail phrase is not stored
+ok 19 - a caption that is only a silent-tail phrase is not stored
+  ---
+  duration_ms: 2.690293
+  type: 'test'
+  ...
+# Subtest: the page drops a store caption when the clip is a silent tail
+ok 20 - the page drops a store caption when the clip is a silent tail
+  ---
+  duration_ms: 3.030918
+  type: 'test'
+  ...
+# Subtest: a fresh profile speaks through the host tts and smartest providers
+ok 21 - a fresh profile speaks through the host tts and smartest providers
+  ---
+  duration_ms: 10.246958
+  type: 'test'
+  ...
+# Subtest: streamable HTTP on 127.0.0.1 with a bearer token
+ok 22 - streamable HTTP on 127.0.0.1 with a bearer token
+  ---
+  duration_ms: 1090.577801
+  type: 'test'
+  ...
+# Subtest: an invite lists the room password beside a plain link
+ok 23 - an invite lists the room password beside a plain link
+  ---
+  duration_ms: 3.198451
+  type: 'test'
+  ...
+# Subtest: a link that is the password itself is refused
+ok 24 - a link that is the password itself is refused
+  ---
+  duration_ms: 0.731886
+  type: 'test'
+  ...
+# Subtest: tool output carries the room password only as its own field, and never the bot password
+ok 25 - tool output carries the room password only as its own field, and never the bot password
+  ---
+  duration_ms: 80.192384
+  type: 'test'
+  ...
+# Subtest: a download killed halfway leaves no model file that the next start would trust
+ok 26 - a download killed halfway leaves no model file that the next start would trust
+  ---
+  duration_ms: 505.504388
+  type: 'test'
+  ...
+# Subtest: a model file that will not load is fetched again once, then the error is plain
+ok 27 - a model file that will not load is fetched again once, then the error is plain
+  ---
+  duration_ms: 524.51639
+  type: 'test'
+  ...
+# Subtest: the binary exits 1 with one Kokoro line when the weights will not load
+ok 28 - the binary exits 1 with one Kokoro line when the weights will not load
+  ---
+  duration_ms: 1001.677086
+  type: 'test'
+  ...
+# Subtest: a start after a download was killed asks only for the bytes it does not have
+ok 29 - a start after a download was killed asks only for the bytes it does not have
+  ---
+  duration_ms: 971.485414
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:44.636Z Kokoro: resuming model_quantized.onnx at 300000 of 1000000 bytes
+# Subtest: a resumed download puts the kept bytes and the rest together in order
+ok 30 - a resumed download puts the kept bytes and the rest together in order
+  ---
+  duration_ms: 503.894311
+  type: 'test'
+  ...
+# Subtest: a server that ignores Range gives the whole file, not the kept bytes twice
+ok 31 - a server that ignores Range gives the whole file, not the kept bytes twice
+  ---
+  duration_ms: 394.489301
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:45.452Z Kokoro: model_quantized.onnx changed since its kept bytes; downloading it again
+# Subtest: a part of an older version of the model is not joined to the new one
+ok 32 - a part of an older version of the model is not joined to the new one
+  ---
+  duration_ms: 407.544382
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:45.852Z Kokoro: resuming model_quantized.onnx at 200000 of 600000 bytes
+# Subtest: a resume tells the server which version its kept bytes are from
+ok 33 - a resume tells the server which version its kept bytes are from
+  ---
+  duration_ms: 402.804788
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:46.251Z Kokoro: model_quantized.onnx has no version tag for its kept bytes; downloading it again
+# Subtest: a part from a server that gave no version tag is downloaded again, not resumed
+ok 34 - a part from a server that gave no version tag is downloaded again, not resumed
+  ---
+  duration_ms: 394.748311
+  type: 'test'
+  ...
+# Subtest: listing the model folder skips a file renamed away under it
+ok 35 - listing the model folder skips a file renamed away under it
+  ---
+  duration_ms: 0.875692
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:41.368Z Kokoro: loading onnx-community/Kokoro-82M-v1.0-ONNX (q8) into /home/nathan/.cache/gifos-mcp-test-kokoro/kokoro
+# [gifos-mcp] 2026-10-17T22:40:41.414Z Kokoro: config.json 100%
+# [gifos-mcp] 2026-10-17T22:40:41.416Z Kokoro: tokenizer.json 100%
+# [gifos-mcp] 2026-10-17T22:40:41.416Z Kokoro: tokenizer_config.json 100%
+# [gifos-mcp] 2026-10-17T22:40:41.668Z Kokoro: the weights in /home/nathan/.cache/gifos-mcp-test-kokoro/kokoro/onnx-community/Kokoro-82M-v1.0-ONNX did not load (Unable to get model file path or buffer.); downloading them again
+# Unable to determine content-length from response headers. Will expand buffer when needed.
+# [gifos-mcp] 2026-10-17T22:40:41.935Z Kokoro: tokenizer.json 100%
+# [gifos-mcp] 2026-10-17T22:40:41.992Z Kokoro: config.json 100%
+# [gifos-mcp] 2026-10-17T22:40:41.996Z Kokoro: tokenizer_config.json 100%
+# [gifos-mcp] 2026-10-17T22:40:42.519Z Kokoro: onnx/model_quantized.onnx 0%
+# [gifos-mcp] 2026-10-17T22:40:52.003Z Kokoro: onnx/model_quantized.onnx 100%
+# [gifos-mcp] 2026-10-17T22:40:52.693Z Kokoro is ready (af_heart)
+# Subtest: install leads to Kokoro, captions, and the model through the host binding
+ok 36 - install leads to Kokoro, captions, and the model through the host binding
+  ---
+  duration_ms: 15882.755536
+  type: 'test'
+  ...
+# app voice after join: {"speak":true,"respond_to_command":true,"errors":[]}
+# tts: ["The capital of France is Paris."]
+# meet.speak: [{"id":"mt_3","text":"The capital of France is Paris.","mime":"audio/wav","n":8}]
+# transcript:
+#   Dana: Hey bot, what is the capital of France?
+#   harbor-maple: The capital of France is Paris.
+# status.voice: {"respond_to_command":true,"conversation_voice":"local","model":"local-model","tts":{"engine":"kokoro","app":"mcp-tts-kokoro","voice":"af_heart"},"stt":"configured","handed":true,"gap":null}
+# Subtest: a joined bot answers "Hey bot, what is the capital of France?" out loud
+ok 37 - a joined bot answers "Hey bot, what is the capital of France?" out loud
+  ---
+  duration_ms: 4842.619034
+  type: 'test'
+  ...
+# Subtest: a fresh profile keeps Kokoro in this process and installs speech-to-text from the store
+ok 38 - a fresh profile keeps Kokoro in this process and installs speech-to-text from the store
+  ---
+  duration_ms: 4.387996
+  type: 'test'
+  ...
+# Subtest: an HTTP stand-in is served by this process and is not written into Settings
+ok 39 - an HTTP stand-in is served by this process and is not written into Settings
+  ---
+  duration_ms: 1.082691
+  type: 'test'
+  ...
+# Subtest: the host answers speech, captions, and the model, and a failure does not echo the key
+ok 40 - the host answers speech, captions, and the model, and a failure does not echo the key
+  ---
+  duration_ms: 2.424896
+  type: 'test'
+  ...
+# Subtest: https pages do not call an http model directly
+ok 41 - https pages do not call an http model directly
+  ---
+  duration_ms: 0.350858
+  type: 'test'
+  ...
+# Subtest: the host bridge reads Settings and does not put the key in the app
+ok 42 - the host bridge reads Settings and does not put the key in the app
+  ---
+  duration_ms: 3.62305
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:41.391Z schedule.json could not be read; kept as schedule.json.bad-1792276841391, starting with no orders.
+# Subtest: a one-off order stores the join password and never the admin password
+ok 43 - a one-off order stores the join password and never the admin password
+  ---
+  duration_ms: 21.542593
+  type: 'test'
+  ...
+# Subtest: an unknown recurrence rule is refused and not stored
+ok 44 - an unknown recurrence rule is refused and not stored
+  ---
+  duration_ms: 1.705707
+  type: 'test'
+  ...
+# Subtest: a weekly rule expands in the order time zone
+ok 45 - a weekly rule expands in the order time zone
+  ---
+  duration_ms: 10.9644
+  type: 'test'
+  ...
+# Subtest: an update with no occurrence changes the future series, and one occurrence stays put
+ok 46 - an update with no occurrence changes the future series, and one occurrence stays put
+  ---
+  duration_ms: 9.070145
+  type: 'test'
+  ...
+# Subtest: over capacity is stored, not rejected
+ok 47 - over capacity is stored, not rejected
+  ---
+  duration_ms: 1.579951
+  type: 'test'
+  ...
+# Subtest: the clock joins one minute early, joins late while end is ahead, and misses a closed window
+ok 48 - the clock joins one minute early, joins late while end is ahead, and misses a closed window
+  ---
+  duration_ms: 6.765732
+  type: 'test'
+  ...
+# Subtest: after the scheduled end the bot leaves when the room is empty or quiet, and stays while people talk
+ok 49 - after the scheduled end the bot leaves when the room is empty or quiet, and stays while people talk
+  ---
+  duration_ms: 3.164051
+  type: 'test'
+  ...
+# Subtest: speech and captions are queued per meeting, and thinking shows while a reply is composed
+ok 50 - speech and captions are queued per meeting, and thinking shows while a reply is composed
+  ---
+  duration_ms: 1.951109
+  type: 'test'
+  ...
+# Subtest: a schedule save cut short keeps the last good schedule.json
+ok 51 - a schedule save cut short keeps the last good schedule.json
+  ---
+  duration_ms: 2.678958
+  type: 'test'
+  ...
+# Subtest: an unreadable schedule.json is kept aside, not overwritten by the next save
+ok 52 - an unreadable schedule.json is kept aside, not overwritten by the next save
+  ---
+  duration_ms: 2.393087
+  type: 'test'
+  ...
+# Subtest: a room that cannot be entered raises one meeting.error per order, not one every tick; a good join resets it
+ok 53 - a room that cannot be entered raises one meeting.error per order, not one every tick; a good join resets it
+  ---
+  duration_ms: 2.836975
+  type: 'test'
+  ...
+# Subtest: an order whose room cannot be entered raises one schedule.due, not one every tick
+ok 54 - an order whose room cannot be entered raises one schedule.due, not one every tick
+  ---
+  duration_ms: 1.676092
+  type: 'test'
+  ...
+# Subtest: an order moved to a new window after its room failed or it waited for capacity announces again in that window, and the clock forgets orders that are done
+ok 55 - an order moved to a new window after its room failed or it waited for capacity announces again in that window, and the clock forgets orders that are done
+  ---
+  duration_ms: 2.786073
+  type: 'test'
+  ...
+# Subtest: create_meeting, schedule_meeting, list, update, import, and cancel
+ok 56 - create_meeting, schedule_meeting, list, update, import, and cancel
+  ---
+  duration_ms: 63.025968
+  type: 'test'
+  ...
+# Subtest: the clock joins with the stored room password and capacity_status reports a clash
+ok 57 - the clock joins with the stored room password and capacity_status reports a clash
+  ---
+  duration_ms: 14.964941
+  type: 'test'
+  ...
+# Subtest: lines, report, thinking, overrun, and a full room
+ok 58 - lines, report, thinking, overrun, and a full room
+  ---
+  duration_ms: 16.020705
+  type: 'test'
+  ...
+# Subtest: leave_meeting on a room Meet Bot already dropped ends the meeting and keeps its transcript
+ok 59 - leave_meeting on a room Meet Bot already dropped ends the meeting and keeps its transcript
+  ---
+  duration_ms: 8.531346
+  type: 'test'
+  ...
+# Subtest: end_meeting that fails for another reason keeps the meeting live so a retry can reach it
+ok 60 - end_meeting that fails for another reason keeps the meeting live so a retry can reach it
+  ---
+  duration_ms: 9.813569
+  type: 'test'
+  ...
+# Subtest: the clock ends an overrun room Meet Bot already dropped and still serves the next order
+ok 61 - the clock ends an overrun room Meet Bot already dropped and still serves the next order
+  ---
+  duration_ms: 27.898959
+  type: 'test'
+  ...
+# Subtest: a clock leave that fails for another reason still serves the next order and retries the leave next tick
+ok 62 - a clock leave that fails for another reason still serves the next order and retries the leave next tick
+  ---
+  duration_ms: 18.438086
+  type: 'test'
+  ...
+# Subtest: config: workers and rooms per worker must cover the cap
+ok 63 - config: workers and rooms per worker must cover the cap
+  ---
+  duration_ms: 4.89869
+  type: 'test'
+  ...
+# Subtest: each worker has its own profile and bot name; worker 0 keeps the original
+ok 64 - each worker has its own profile and bot name; worker 0 keeps the original
+  ---
+  duration_ms: 2.305542
+  type: 'test'
+  ...
+# Subtest: joins fill the warm worker, then start the next; calls stay with the worker that joined
+ok 65 - joins fill the warm worker, then start the next; calls stay with the worker that joined
+  ---
+  duration_ms: 287.30132
+  type: 'test'
+  ...
+# Subtest: a full pool refuses the next join; a leave frees that seat on that worker
+ok 66 - a full pool refuses the next join; a leave frees that seat on that worker
+  ---
+  duration_ms: 250.108182
+  type: 'test'
+  ...
+# Subtest: thinking in a worker is reported under the supervisor session id
+ok 67 - thinking in a worker is reported under the supervisor session id
+  ---
+  duration_ms: 133.49782
+  type: 'test'
+  ...
+# Subtest: a worker refuses a method that is not on its list, and the bot password is not on its command line or environment
+ok 68 - a worker refuses a method that is not on its list, and the bot password is not on its command line or environment
+  ---
+  duration_ms: 128.248935
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:42.952Z worker 1 lost: write EPIPE; 1 meeting(s) dropped
+# Subtest: a worker crash drops its rooms, fails its calls in flight, and the clock rejoins on the worker that is up
+ok 69 - a worker crash drops its rooms, fails its calls in flight, and the clock rejoins on the worker that is up
+  ---
+  duration_ms: 450.500356
+  type: 'test'
+  ...
+# Subtest: the real worker entry boots over IPC and answers info without starting a browser
+ok 70 - the real worker entry boots over IPC and answers info without starting a browser
+  ---
+  duration_ms: 662.740332
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:44.250Z worker 0 lost: worker 0 stopped answering (no heartbeat for 401ms); 1 meeting(s) dropped
+# Subtest: a worker that stops answering the heartbeat is killed, and its rooms are dropped
+ok 71 - a worker that stops answering the heartbeat is killed, and its rooms are dropped
+  ---
+  duration_ms: 511.026092
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:44.349Z worker 0 lost: worker 0 exited (code 3)
+# [gifos-mcp] 2026-10-17T22:40:44.552Z worker 0 lost: worker 0 exited (code 3)
+# [gifos-mcp] 2026-10-17T22:40:44.654Z worker 0 lost: worker 0 exited (code 3)
+# [gifos-mcp] 2026-10-17T22:40:44.751Z worker 0 lost: worker 0 exited (code 3)
+# [gifos-mcp] 2026-10-17T22:40:44.848Z worker 0 lost: worker 0 exited (code 3)
+# Subtest: a worker that keeps dying waits longer before each restart, and joins go to a worker that is up
+ok 72 - a worker that keeps dying waits longer before each restart, and joins go to a worker that is up
+  ---
+  duration_ms: 602.453042
+  type: 'test'
+  ...
+# Subtest: a call that never answers times out without killing a worker that is still alive
+ok 73 - a call that never answers times out without killing a worker that is still alive
+  ---
+  duration_ms: 310.261137
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:45.471Z worker 0: a join landed after it timed out; leaving mt_1
+# Subtest: a join that times out and then lands late is left at once, so no seat is orphaned
+ok 74 - a join that times out and then lands late is left at once, so no seat is orphaned
+  ---
+  duration_ms: 333.620275
+  type: 'test'
+  ...
+# Subtest: the bot on worker 1 sits as <name>-w1; its own speech is a spoken line, not a human one
+ok 75 - the bot on worker 1 sits as <name>-w1; its own speech is a spoken line, not a human one
+  ---
+  duration_ms: 230.183725
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:45.956Z worker 0 lost: worker 0 exited (SIGKILL); 1 meeting(s) dropped
+# [gifos-mcp] 2026-10-17T22:40:45.958Z worker 1 lost: worker 1 exited (SIGKILL); 1 meeting(s) dropped
+# Subtest: a meeting joined by hand with no password, and one started with start_meeting, come back after their worker dies; end_meeting stops that
+ok 76 - a meeting joined by hand with no password, and one started with start_meeting, come back after their worker dies; end_meeting stops that
+  ---
+  duration_ms: 345.871996
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:46.185Z worker 0 lost: worker 0 exited (SIGKILL)
+# Subtest: while worker 0 waits out its restart, a join warms worker 1 instead of failing
+ok 77 - while worker 0 waits out its restart, a join warms worker 1 instead of failing
+  ---
+  duration_ms: 225.776309
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:46.408Z worker 0 lost: worker 0 exited (SIGKILL); 1 meeting(s) dropped
+# Subtest: a reseat in flight and a start_meeting or a second tick for the same room join it once
+ok 78 - a reseat in flight and a start_meeting or a second tick for the same room join it once
+  ---
+  duration_ms: 326.073109
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:46.741Z worker 0 lost: worker 0 exited (SIGKILL); 1 meeting(s) dropped
+# Subtest: end_meeting while a reseat is in flight ends it; the late join is left, not seated
+ok 79 - end_meeting while a reseat is in flight ends it; the late join is left, not seated
+  ---
+  duration_ms: 234.559966
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:46.966Z worker 0 lost: worker 0 exited (SIGKILL); 1 meeting(s) dropped
+# Subtest: end_meeting while a join is in flight, then the late leave fails: the meeting keeps that seat so a second end_meeting can leave it
+ok 80 - end_meeting while a join is in flight, then the late leave fails: the meeting keeps that seat so a second end_meeting can leave it
+  ---
+  duration_ms: 229.80521
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:47.305Z worker 1 lost: worker 1 exited (SIGKILL); 1 meeting(s) dropped
+# Subtest: while a lost worker waits out its restart, orders it cannot seat wait once instead of erroring every tick, and one that never gets a seat is missed for capacity
+ok 81 - while a lost worker waits out its restart, orders it cannot seat wait once instead of erroring every tick, and one that never gets a seat is missed for capacity
+  ---
+  duration_ms: 328.348397
+  type: 'test'
+  ...
+# Subtest: a worker whose supervisor is killed closes its browser and exits instead of keeping the seat
+ok 82 - a worker whose supervisor is killed closes its browser and exits instead of keeping the seat
+  ---
+  duration_ms: 269.223508
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:47.791Z worker 0 lost: worker 0 exited (SIGKILL); 1 meeting(s) dropped
+# Subtest: a worker killed under its browser leaves no browser temp folder behind
+ok 83 - a worker killed under its browser leaves no browser temp folder behind
+  ---
+  duration_ms: 207.418203
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:48.672Z Kokoro: loading onnx-community/Kokoro-82M-v1.0-ONNX (q8) into /tmp/gifos-unit-tmp-opJ3Bk/gifos-stage-b-boot-eOYnce/kokoro
+# Subtest: a worker still booting (Kokoro download) exits when its supervisor is killed
+ok 84 - a worker still booting (Kokoro download) exits when its supervisor is killed
+  ---
+  duration_ms: 828.226952
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:49.406Z Kokoro: loading onnx-community/Kokoro-82M-v1.0-ONNX (q8) into /tmp/gifos-unit-tmp-opJ3Bk/gifos-stage-b-boot-UEwTjd/kokoro
+# Subtest: close() stops a worker still booting (Kokoro download) at once, not after closeMs
+ok 85 - close() stops a worker still booting (Kokoro download) at once, not after closeMs
+  ---
+  duration_ms: 719.098098
+  type: 'test'
+  ...
+# Subtest: status answers at once when workers never answer info; each such row says so and the workers stay up
+ok 86 - status answers at once when workers never answer info; each such row says so and the workers stay up
+  ---
+  duration_ms: 709.754364
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:50.361Z worker 1 lost: worker 1 exited (SIGKILL); 1 meeting(s) dropped
+# Subtest: a worker that restarts gets the voice settings set before it died
+ok 87 - a worker that restarts gets the voice settings set before it died
+  ---
+  duration_ms: 320.981023
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:50.682Z worker 0: setVoice failed: setVoice refused
+# Subtest: set_voice reaches every ready worker even when one refuses it, and the one that refused gets it on its next join
+ok 88 - set_voice reaches every ready worker even when one refuses it, and the one that refused gets it on its next join
+  ---
+  duration_ms: 215.651683
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:51.192Z worker 0: setVoice failed: Worker 0 did not answer setVoice within 300ms.
+# Subtest: set_voice still reaches the other workers when one never answers it, after one call timeout
+ok 89 - set_voice still reaches the other workers when one never answers it, after one call timeout
+  ---
+  duration_ms: 508.108191
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:51.398Z worker 0: setVoice failed: setVoice refused
+# [gifos-mcp] 2026-10-17T22:40:51.498Z worker 0: setVoice retry failed: setVoice refused
+# [gifos-mcp] 2026-10-17T22:40:51.598Z worker 0: setVoice retry failed: setVoice refused
+# Subtest: a worker that refused set_voice is asked again on its own, without a new join, and status shows it pending until it takes it
+ok 90 - a worker that refused set_voice is asked again on its own, without a new join, and status shows it pending until it takes it
+  ---
+  duration_ms: 913.229631
+  type: 'test'
+  ...
+# Subtest: a leave_meeting that fails keeps the room on its worker, so a second leave_meeting reaches it and ends the meeting
+ok 91 - a leave_meeting that fails keeps the room on its worker, so a second leave_meeting reaches it and ends the meeting
+  ---
+  duration_ms: 132.767736
+  type: 'test'
+  ...
+# Subtest: a leave the worker answers with "No such meeting" counts as left
+ok 92 - a leave the worker answers with "No such meeting" counts as left
+  ---
+  duration_ms: 119.242106
+  type: 'test'
+  ...
+# Subtest: a leave that times out keeps the seat until the late answer lands, then frees it
+ok 93 - a leave that times out keeps the seat until the late answer lands, then frees it
+  ---
+  duration_ms: 308.455904
+  type: 'test'
+  ...
+# Subtest: a leave_meeting that timed out and then landed late: a second leave_meeting ends the meeting instead of failing for good
+ok 94 - a leave_meeting that timed out and then landed late: a second leave_meeting ends the meeting instead of failing for good
+  ---
+  duration_ms: 354.356155
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:53.236Z worker 0: browser did not start: Chromium would not start on worker 0
+# Subtest: a worker whose browser will not start does not take every join: the join goes to the next worker, and the broken one is tried again after a backoff
+ok 95 - a worker whose browser will not start does not take every join: the join goes to the next worker, and the broken one is tried again after a backoff
+  ---
+  duration_ms: 434.476526
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:53.694Z worker 0: browser did not start: Chromium would not start on worker 0
+# Subtest: a one-worker pool whose browser will not start reports why on the join
+ok 96 - a one-worker pool whose browser will not start reports why on the join
+  ---
+  duration_ms: 239.930173
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:54.105Z worker 0: a join landed after it timed out; leaving mt_1
+# [gifos-mcp] 2026-10-17T22:40:54.109Z worker 0: late leave of mt_1 failed, trying again every 100ms: Meeting Bot: the room did not answer
+# Subtest: a late join whose leave fails keeps its seat and is left again on its own, so the bot is not stranded in the room
+ok 97 - a late join whose leave fails keeps its seat and is left again on its own, so the bot is not stranded in the room
+  ---
+  duration_ms: 644.046919
+  type: 'test'
+  ...
+# Subtest: a join that timed out and has not landed yet keeps its seat, so the worker is not given more rooms than its budget
+ok 98 - a join that timed out and has not landed yet keeps its seat, so the worker is not given more rooms than its budget
+  ---
+  duration_ms: 382.035332
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:54.933Z worker 0 lost: worker 0 did not boot within 200ms
+# Subtest: a join that never answers is checked against the worker's own room list: Meet Bot has no such room, so the seat is freed
+not ok 99 - a join that never answers is checked against the worker's own room list: Meet Bot has no such room, so the seat is freed
+  ---
+  duration_ms: 207.667515
+  type: 'test'
+  location: '/home/nathan/rel23-gate-1017/gifos-mcp/test/unit/stage-b.test.js:841:1'
+  failureType: 'testCodeFailure'
+  error: 'worker 0 did not boot within 200ms'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    ChildProcess.<anonymous> (file:///home/nathan/rel23-gate-1017/gifos-mcp/src/pool.js:207:25)
+    ChildProcess.emit (node:events:519:28)
+    ChildProcess._handle.onexit (node:internal/child_process:293:12)
+  ...
+# [gifos-mcp] 2026-10-17T22:40:55.145Z worker 0 lost: worker 0 did not boot within 200ms
+# Subtest: a join that never answers but whose room Meet Bot holds is left, so the bot is not stranded there
+not ok 100 - a join that never answers but whose room Meet Bot holds is left, so the bot is not stranded there
+  ---
+  duration_ms: 211.39144
+  type: 'test'
+  location: '/home/nathan/rel23-gate-1017/gifos-mcp/test/unit/stage-b.test.js:860:1'
+  failureType: 'testCodeFailure'
+  error: 'worker 0 did not boot within 200ms'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    ChildProcess.<anonymous> (file:///home/nathan/rel23-gate-1017/gifos-mcp/src/pool.js:207:25)
+    ChildProcess.emit (node:events:519:28)
+    ChildProcess._handle.onexit (node:internal/child_process:293:12)
+  ...
+# Subtest: the late-join check does not leave a room the pool holds or one a join still in time is walking into
+ok 101 - the late-join check does not leave a room the pool holds or one a join still in time is walking into
+  ---
+  duration_ms: 1224.759739
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:57.080Z worker 0: a leave that never answered did leave mt_1; seat freed
+# Subtest: a leave_meeting that never answers is checked against the worker's own room list: Meet Bot left the room, so the seat frees and a second leave_meeting ends the meeting
+ok 102 - a leave_meeting that never answers is checked against the worker's own room list: Meet Bot left the room, so the seat frees and a second leave_meeting ends the meeting
+  ---
+  duration_ms: 720.922512
+  type: 'test'
+  ...
+# Subtest: a leave that never answers while Meet Bot still lists the room keeps the seat, and a second leave can reach it
+ok 103 - a leave that never answers while Meet Bot still lists the room keeps the seat, and a second leave can reach it
+  ---
+  duration_ms: 905.764584
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:58.301Z worker 0 lost: worker 0 did not boot within 300ms
+# Subtest: a worker whose boot never finishes is killed after bootMs, so a join goes to the next worker instead of waiting forever
+ok 104 - a worker whose boot never finishes is killed after bootMs, so a join goes to the next worker instead of waiting forever
+  ---
+  duration_ms: 409.02445
+  type: 'test'
+  ...
+# Subtest: close() while a join waits on a worker that is booting starts no other worker, and the join fails
+ok 105 - close() while a join waits on a worker that is booting starts no other worker, and the join fails
+  ---
+  duration_ms: 605.241139
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:59.116Z worker 0 lost: worker 0 exited (code 9)
+# [gifos-mcp] 2026-10-17T22:40:59.116Z worker 0 died during a join; trying the next worker
+# Subtest: a join whose worker dies mid-join goes to the next worker instead of failing
+ok 106 - a join whose worker dies mid-join goes to the next worker instead of failing
+  ---
+  duration_ms: 206.750093
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:59.320Z worker 0 lost: worker 0 exited (code 9)
+# [gifos-mcp] 2026-10-17T22:40:59.320Z worker 0 died during a join; trying the next worker
+# [gifos-mcp] 2026-10-17T22:40:59.421Z worker 1 lost: worker 1 exited (code 9)
+# Subtest: a join that takes down every worker it reaches is tried on one more worker only, then fails
+ok 107 - a join that takes down every worker it reaches is tried on one more worker only, then fails
+  ---
+  duration_ms: 202.449149
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:59.528Z worker 0 lost: worker 0 exited (code 9); 1 meeting(s) dropped
+# [gifos-mcp] 2026-10-17T22:40:59.528Z worker 0 died during a join; trying the next worker
+# [gifos-mcp] 2026-10-17T22:40:59.630Z worker 1 lost: worker 1 exited (code 9)
+# [gifos-mcp] 2026-10-17T22:40:59.735Z worker 0 lost: worker 0 exited (code 9); 1 meeting(s) dropped
+# [gifos-mcp] 2026-10-17T22:40:59.735Z worker 0 died during a join; trying the next worker
+# [gifos-mcp] 2026-10-17T22:40:59.837Z worker 1 lost: worker 1 exited (code 9)
+# Subtest: a scheduled room that takes down every worker it reaches is not joined again on every tick, so the meetings it knocked off stay seated
+ok 108 - a scheduled room that takes down every worker it reaches is not joined again on every tick, so the meetings it knocked off stay seated
+  ---
+  duration_ms: 521.009609
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:41:00.050Z worker 0 lost: worker 0 exited (code 9); 1 meeting(s) dropped
+# [gifos-mcp] 2026-10-17T22:41:00.050Z worker 0 died during a join; trying the next worker
+# [gifos-mcp] 2026-10-17T22:41:00.152Z worker 1 lost: worker 1 exited (code 9)
+# Subtest: a start_meeting or join_meeting by hand on a room that just took down every worker is refused until its wait is over, so the meetings it knocked off keep their seats
+ok 109 - a start_meeting or join_meeting by hand on a room that just took down every worker is refused until its wait is over, so the meetings it knocked off keep their seats
+  ---
+  duration_ms: 314.798981
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:41:00.363Z worker 0 lost: worker 0 exited (code 9)
+# [gifos-mcp] 2026-10-17T22:41:00.363Z worker 0 died during a join; trying the next worker
+# [gifos-mcp] 2026-10-17T22:41:00.465Z worker 1 lost: worker 1 exited (code 9)
+# [gifos-mcp] 2026-10-17T22:41:00.570Z worker 0 lost: worker 0 exited (code 9)
+# [gifos-mcp] 2026-10-17T22:41:00.570Z worker 0 died during a join; trying the next worker
+# [gifos-mcp] 2026-10-17T22:41:00.670Z worker 1 lost: worker 1 exited (code 9)
+# Subtest: a room that took down every worker is still waited on after the supervisor restarts, by the clock and by hand
+ok 110 - a room that took down every worker is still waited on after the supervisor restarts, by the clock and by hand
+  ---
+  duration_ms: 414.141645
+  type: 'test'
+  ...
+# Subtest: a join whose transcription will not start does not leave the bot in the room with nobody holding it, so the next tick does not seat it twice
+ok 111 - a join whose transcription will not start does not leave the bot in the room with nobody holding it, so the next tick does not seat it twice
+  ---
+  duration_ms: 111.224857
+  type: 'test'
+  ...
+# Subtest: a join whose transcription will not start and whose leave fails stays live with captions off, so unmute and end_meeting reach that seat and no tick seats it again
+ok 112 - a join whose transcription will not start and whose leave fails stays live with captions off, so unmute and end_meeting reach that seat and no tick seats it again
+  ---
+  duration_ms: 111.56413
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:41:00.995Z meetings.json not saved (ENOSPC: no space left on device, write); the seat is kept in memory until the next save.
+# [gifos-mcp] 2026-10-17T22:41:01.006Z schedule.json not saved (ENOSPC: no space left on device, write); orders are kept in memory until the next save.
+# Subtest: a join whose meetings.json save fails (disk nearly full: the transcripts file is the big one) still starts its captions and raises no error: the seat is held in memory and saved once the disk has room
+ok 113 - a join whose meetings.json save fails (disk nearly full: the transcripts file is the big one) still starts its captions and raises no error: the seat is held in memory and saved once the disk has room
+  ---
+  duration_ms: 109.546172
+  type: 'test'
+  ...
+# Subtest: a clock tick whose schedule.json save fails (disk full) still seats a due order, announces it once as joined, and saves its phase once the disk has room
+ok 114 - a clock tick whose schedule.json save fails (disk full) still seats a due order, announces it once as joined, and saves its phase once the disk has room
+  ---
+  duration_ms: 107.872297
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:41:01.215Z meetings.json not saved (ENOSPC: no space left on device, write); the seat is kept in memory until the next save.
+# [gifos-mcp] 2026-10-17T22:41:01.215Z schedule.json not saved (ENOSPC: no space left on device, write); the order is kept in memory until the next save.
+# [gifos-mcp] 2026-10-17T22:41:01.215Z schedule.json not saved (ENOSPC: no space left on device, write); orders are kept in memory until the next save.
+# Subtest: end_meeting on a full disk (meetings.json and schedule.json saves fail) still reports the leave, announces meeting.left once, and no clock tick seats the bot again
+ok 115 - end_meeting on a full disk (meetings.json and schedule.json saves fail) still reports the leave, announces meeting.left once, and no clock tick seats the bot again
+  ---
+  duration_ms: 108.983418
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:41:01.322Z schedule.json not saved (ENOSPC: no space left on device, write); the order is kept in memory until the next save.
+# [gifos-mcp] 2026-10-17T22:41:01.322Z schedule.json not saved (ENOSPC: no space left on device, write); the order is kept in memory until the next save.
+# [gifos-mcp] 2026-10-17T22:41:01.323Z schedule.json not saved (ENOSPC: no space left on device, write); orders are kept in memory until the next save.
+# Subtest: join_meeting with a password on a full disk (schedule.json save fails after the seat is taken) still reports the join, announces meeting.joined once, keeps the order live in memory, and no clock tick seats the bot again
+ok 116 - join_meeting with a password on a full disk (schedule.json save fails after the seat is taken) still reports the join, announces meeting.joined once, keeps the order live in memory, and no clock tick seats the bot again
+  ---
+  duration_ms: 109.223935
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:41:01.434Z meetings.json not saved (ENOSPC: no space left on device, write); the seat is kept in memory until the next save.
+# [gifos-mcp] 2026-10-17T22:41:01.435Z meetings.json not saved (ENOSPC: no space left on device, write); the seat is kept in memory until the next save.
+# [gifos-mcp] 2026-10-17T22:41:01.435Z meetings.json not saved (ENOSPC: no space left on device, write); the seat is kept in memory until the next save.
+# Subtest: mute, unmute and get_transcript on a full disk (meetings.json save fails after the call landed) still report what the bot did and keep it in memory until the next save
+ok 117 - mute, unmute and get_transcript on a full disk (meetings.json save fails after the call landed) still report what the bot did and keep it in memory until the next save
+  ---
+  duration_ms: 111.58769
+  type: 'test'
+  ...
+# Subtest: lists every tool with an input schema
+ok 118 - lists every tool with an input schema
+  ---
+  duration_ms: 37.867356
+  type: 'test'
+  ...
+# Subtest: create_meeting mints a link on GIFOS_URL and does not touch the browser
+ok 119 - create_meeting mints a link on GIFOS_URL and does not touch the browser
+  ---
+  duration_ms: 10.210433
+  type: 'test'
+  ...
+# Subtest: create_meeting adds the relay to the link when GIFOS_RELAY is set
+ok 120 - create_meeting adds the relay to the link when GIFOS_RELAY is set
+  ---
+  duration_ms: 7.586495
+  type: 'test'
+  ...
+# Subtest: schemas refuse bad input
+ok 121 - schemas refuse bad input
+  ---
+  duration_ms: 22.000443
+  type: 'test'
+  ...
+# Subtest: start_meeting joins the link and turns transcription on
+ok 122 - start_meeting joins the link and turns transcription on
+  ---
+  duration_ms: 7.268
+  type: 'test'
+  ...
+# Subtest: unknown meeting ids and meetings that are not live are explained
+ok 123 - unknown meeting ids and meetings that are not live are explained
+  ---
+  duration_ms: 8.687069
+  type: 'test'
+  ...
+# Subtest: a bot error comes back as a tool error, and the meeting stays scheduled
+ok 124 - a bot error comes back as a tool error, and the meeting stays scheduled
+  ---
+  duration_ms: 5.203325
+  type: 'test'
+  ...
+# Subtest: join_meeting accepts run.html and /meet links, refuses others
+ok 125 - join_meeting accepts run.html and /meet links, refuses others
+  ---
+  duration_ms: 24.777779
+  type: 'test'
+  ...
+# Subtest: mute and unmute switch transcription
+ok 126 - mute and unmute switch transcription
+  ---
+  duration_ms: 6.484417
+  type: 'test'
+  ...
+# Subtest: share_content posts into the meeting
+ok 127 - share_content posts into the meeting
+  ---
+  duration_ms: 9.636247
+  type: 'test'
+  ...
+# Subtest: get_transcript while live, end_meeting keeps a copy, and it survives a restart
+ok 128 - get_transcript while live, end_meeting keeps a copy, and it survives a restart
+  ---
+  duration_ms: 11.399118
+  type: 'test'
+  ...
+# Subtest: list_meetings and status
+ok 129 - list_meetings and status
+  ---
+  duration_ms: 7.839533
+  type: 'test'
+  ...
+# Subtest: say reports the Meet Bot gap and does not post chat
+ok 130 - say reports the Meet Bot gap and does not post chat
+  ---
+  duration_ms: 5.359703
+  type: 'test'
+  ...
+# Subtest: non-voice tools go through Meet Bot and gaps do not touch chat
+ok 131 - non-voice tools go through Meet Bot and gaps do not touch chat
+  ---
+  duration_ms: 12.012722
+  type: 'test'
+  ...
+# Subtest: src and bin do not call a chat model or play into the meeting
+ok 132 - src and bin do not call a chat model or play into the meeting
+  ---
+  duration_ms: 5.037287
+  type: 'test'
+  ...
+# Subtest: local voice settings name providers, and public text does not carry the key
+ok 133 - local voice settings name providers, and public text does not carry the key
+  ---
+  duration_ms: 0.417899
+  type: 'test'
+  ...
+# Subtest: the key stays out of the page until MeetingBot.setVoice exists
+ok 134 - the key stays out of the page until MeetingBot.setVoice exists
+  ---
+  duration_ms: 2.068854
+  type: 'test'
+  ...
+# Subtest: say and the transcript go through Meet Bot, and the key stays out of tool text
+ok 135 - say and the transcript go through Meet Bot, and the key stays out of tool text
+  ---
+  duration_ms: 69.541257
+  type: 'test'
+  ...
+# Subtest: join_meeting hands only respond_to_command and speak, never the old voice call the new Meet Bot refuses
+ok 136 - join_meeting hands only respond_to_command and speak, never the old voice call the new Meet Bot refuses
+  ---
+  duration_ms: 22.993012
+  type: 'test'
+  ...
+# Subtest: captions are not stored twice, and the bot line is spoken
+ok 137 - captions are not stored twice, and the bot line is spoken
+  ---
+  duration_ms: 1.034139
+  type: 'test'
+  ...
+# Subtest: caption poll waits for the last transcript call before the next one
+ok 138 - caption poll waits for the last transcript call before the next one
+  ---
+  duration_ms: 902.210751
+  type: 'test'
+  ...
+# Subtest: a caption snapshot that lands after its poll stopped or the room was reseated is dropped
+ok 139 - a caption snapshot that lands after its poll stopped or the room was reseated is dropped
+  ---
+  duration_ms: 11.693311
+  type: 'test'
+  ...
+# [gifos-mcp] 2026-10-17T22:40:44.191Z transcript not saved (ENOSPC: no space left on device, write); lines are kept in memory until a write works.
+# [gifos-mcp] 2026-10-17T22:40:44.211Z transcript saved again.
+# Subtest: a transcript append that fails (disk full) keeps every caption line and the chat that was sent, and writes them once the disk has room
+ok 140 - a transcript append that fails (disk full) keeps every caption line and the chat that was sent, and writes them once the disk has room
+  ---
+  duration_ms: 46.537443
+  type: 'test'
+  ...
+# Subtest: a transcript file whose last line was torn (killed or disk full mid-append) is ended at load, so the next line is not lost
+ok 141 - a transcript file whose last line was torn (killed or disk full mid-append) is ended at load, so the next line is not lost
+  ---
+  duration_ms: 0.960183
+  type: 'test'
+  ...
+# Subtest: Bart is a wake word, and a direct question does not need the name
+ok 142 - Bart is a wake word, and a direct question does not need the name
+  ---
+  duration_ms: 2.645819
+  type: 'test'
+  ...
+# Subtest: the launch script teaches Meet Bot the same wake rule
+ok 143 - the launch script teaches Meet Bot the same wake rule
+  ---
+  duration_ms: 2.841699
+  type: 'test'
+  ...
+1..143
+# tests 143
+# suites 0
+# pass 141
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 22227.627286
+
+unit tests left 1 entries in TMPDIR (remove each home in t.after/afterEach):
+  gifos-mcp-reply-46LHqQ

@@ -7,13 +7,13 @@ import { z } from 'zod';
 import { newRoom, linkFor, roomFromLink, publicView } from './meetings.js';
 import { plainLink } from './invite.js';
 import { LiveTranscript } from './voice/live.js';
-import { CAMERA_GAP, CONTROLS_GAP, HAND_GAP, INTERJECT_GAP, MIC_GAP, SNAPSHOT_GAP, VOICE_GAP, scrub, voicePublic, voiceSettings } from './voice/settings.js';
+import { CAMERA_GAP, CONTROLS_GAP, HAND_GAP, INTERJECT_GAP, MIC_GAP, SNAPSHOT_GAP, VOICE_GAP, meetBotVoice, scrub, voicePublic } from './voice/settings.js';
 import { ScheduleStore, publicOrder, capacityAt, localStamp, DEFAULT_SPAN_MS } from './schedule.js';
 import { EventLog } from './events.js';
 import { createClock } from './clock.js';
 import { log } from './log.js';
 
-export const VERSION = '0.4.0';
+export const VERSION = '0.4.1';
 
 // Meet Bot's answer for a room it no longer holds (ended from its own page
 // or the admin meeting): the bot is already out.
@@ -33,12 +33,21 @@ export function createServer({ cfg, meetings, bot, live, captions, botName, botP
   let handed = null;
   const currentVoice = () => ({ ...cfg.voice, respondToCommand: choice.respondToCommand, conversationVoice: choice.conversationVoice });
   async function applyVoice() {
-    const settings = voiceSettings(currentVoice());
+    const settings = meetBotVoice(currentVoice());
     if (typeof bot.setVoice !== 'function') {
       handed = { applied: false, gap: VOICE_GAP };
       return handed;
     }
-    handed = await bot.setVoice(settings);
+    try {
+      handed = await bot.setVoice(settings);
+      // Version 2 resolves with the switches it now holds. Report what it took.
+      const took = handed && handed.result;
+      if (handed && handed.applied && took && typeof took.speak === 'boolean' && took.speak !== settings.speak) {
+        handed = { applied: false, gap: 'Meeting Bot did not turn speak ' + (settings.speak ? 'on' : 'off') + '.' };
+      }
+    } catch (e) {
+      handed = { applied: false, gap: scrub('Meeting Bot refused the voice switches: ' + String((e && e.message) || e), secret) };
+    }
     return handed;
   }
 
@@ -148,9 +157,11 @@ export function createServer({ cfg, meetings, bot, live, captions, botName, botP
       state: 'live', session_id: sessionId, transcribing: true, muted: false, reseat: false,
       started_at: new Date().toISOString(), ended_at: null, transcript: null,
     });
-    // Voice is the host-injected Smartest and Text to speech providers.
-    // The new Meet Bot refuses MeetingBot.setVoice when it carries
-    // conversation_voice, llm, tts, or stt (the old URL-style setup).
+    // Meet Bot starts quiet. Its words come from the host-injected Smartest
+    // and Text to speech roles, but it answers only after setVoice turns
+    // speak (and respond_to_command) on. Each join hands them again, so a
+    // restarted app does not stay quiet.
+    await applyVoice();
     if (captions) await captions.start(updated);
     return updated;
   }
@@ -406,7 +417,7 @@ export function createServer({ cfg, meetings, bot, live, captions, botName, botP
 
   server.registerTool('set_voice', {
     title: 'Hand Meet Bot its voice switches',
-    description: 'Passes respond_to_command and conversation_voice (none, grok, or local) through to Meet Bot. local names the smartest role. When this process hosts that role, it calls the model. The page does not. The key is not an argument and is not returned.',
+    description: 'Turns Meet Bot\'s spoken answers on or off in every meeting it is in. respond_to_command lets it answer "Hey bot" commands it hears. conversation_voice none keeps it quiet; grok or local turns speech on (local uses the configured model, then Kokoro). Meet Bot gets only { respond_to_command, speak }; the model key is never an argument and is never returned.',
     inputSchema: {
       respond_to_command: z.boolean().optional().describe('When true, Meet Bot may answer commands it hears. When false, it does not.'),
       conversation_voice: z.enum(['none', 'grok', 'local']).optional().describe('none, grok (Grok Voice), or local (the configured LLM, then Kokoro).'),

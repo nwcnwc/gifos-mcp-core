@@ -2,6 +2,8 @@
 // and does not speak. See docs/MEETBOT-BRIDGE.md.
 
 export const VOICE_GAP = 'Meeting Bot has no setVoice method (contract version 1). Conversation voice stays off until the app accepts the setting. See docs/MEETBOT-BRIDGE.md.';
+// Before the first join nothing has been handed yet.
+export const VOICE_PENDING = 'Voice switches are handed to Meeting Bot when the bot joins a meeting.';
 export const INTERJECT_GAP = 'Meeting Bot has no interject method (contract version 1). say posts chat only. A spoken line from the assistant needs MeetingBot.interject. See docs/MEETBOT-BRIDGE.md.';
 export const HAND_GAP = 'Meeting Bot has no raiseHand method (contract version 1). The hand stays as it is. See docs/MEETBOT-BRIDGE.md.';
 export const MIC_GAP = 'Meeting Bot has no setMic method (contract version 1). The bot has no microphone until the app accepts the setting. See docs/MEETBOT-BRIDGE.md.';
@@ -64,6 +66,19 @@ export function voiceSettings(voice) {
   return settings;
 }
 
+// The object passed to MeetingBot.setVoice (contract version 2). The app
+// starts with speak and respond_to_command off and refuses the old fields
+// (conversation_voice, llm, tts, stt). It speaks with the host's Smartest and
+// Text to speech roles. listen is left out: transcription stays on mute and
+// unmute.
+export function meetBotVoice(voice) {
+  const v = voice || {};
+  return {
+    respond_to_command: !!v.respondToCommand,
+    speak: !!v.conversationVoice && v.conversationVoice !== 'none',
+  };
+}
+
 export function voicePublic(voice, handoff) {
   const v = voice || {};
   const handed = !!(handoff && handoff.applied);
@@ -74,6 +89,6 @@ export function voicePublic(voice, handoff) {
     tts: ttsPublic(v),
     stt: (v.sttUrl || v.sttApp) ? 'configured' : null,
     handed,
-    gap: handed ? null : ((handoff && handoff.gap) || VOICE_GAP),
+    gap: handed ? null : ((handoff && handoff.gap) || VOICE_PENDING),
   };
 }

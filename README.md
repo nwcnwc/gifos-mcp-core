@@ -160,7 +160,7 @@ If your client can only reach MCP over HTTP, run `gifos-mcp --http [port]`. It l
 | `share_content` | `meeting_id`, `text` | Posts text or a link (up to 2000 characters) into the meeting chat as the bot. There is no screen sharing, because the bot has no screen. This is chat, not speech. |
 | `get_transcript` | `meeting_id` | Plain text, one `speaker: words` line per caption. Works while the meeting is live and after `end_meeting`. |
 | `tail_transcript` | `meeting_id`, `since?` | New caption lines since `since` (a `seq` from the previous tail). Each line is `{seq, ts, speaker, text, kind}` and `kind` is `speech`. Lines come from Meet Bot. Works while the meeting is live and after `end_meeting`. |
-| `set_voice` | `respond_to_command?`, `conversation_voice?` | Hands Meet Bot the two switches (`none`, `grok`, or `local`). The URL, model, and key always come from the environment. The key is not an argument and is not returned. |
+| `set_voice` | `respond_to_command?`, `conversation_voice?` | Turns Meet Bot's spoken answers on or off (`none` is quiet; `grok` or `local` speaks). Meet Bot gets only `{ respond_to_command, speak }`, on this call and on every join. The URL, model, and key always come from the environment. The key is not an argument and is not returned. |
 | `say` | `meeting_id`, `text` | Passes a spoken line to Meet Bot (`MeetingBot.interject`), ahead of conversation voice. Meet Bot asks the `tts` provider, which this process answers when it hosts that role. This server does not play the audio. Errors until Meet Bot grows that method. |
 | `send_chat` | `meeting_id`, `text` | Posts chat through Meet Bot (`MeetingBot.say`), the same channel as `share_content`. |
 | `raise_hand` | `meeting_id`, `on` | `MeetingBot.raiseHand`. Reports the gap on contract version 1. |
@@ -238,8 +238,8 @@ The user tells Grok Bot: *"Set up a demo meeting with Alice and Bob at 5 PM, tak
   (and its `line.*` event), `send_chat` and `say` still report what Meet Bot sent, and the kept lines are
   written in order at the next append that works. A file whose last line was torn is ended before the next line.
 - **The key stays in this process.** When this server hosts `smartest`, it calls the model. The page does
-  not, and `GIFOS_LLM_KEY` is not written into Settings. `MeetingBot.setVoice` receives the provider role
-  `smartest` and never the URL or the key. Leave the key unset and conversation voice stays `none` unless
+  not, and `GIFOS_LLM_KEY` is not written into Settings. `MeetingBot.setVoice` receives only
+  `{ respond_to_command, speak }`, never the URL or the key. Leave the key unset and conversation voice stays `none` unless
   you ask for Grok Voice or name a provider app with `GIFOS_LLM_APP`.
 - **No outgoing messages.** The server never sends email, calendar invites or anything else. Grok Bot does that
   through your own connectors, and you approve each send. Follow-up after the meeting is Grok Bot's job.

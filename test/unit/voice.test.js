@@ -173,8 +173,8 @@ class FakeBot {
   async say() { throw new Error('chat say should not be used for a spoken line'); }
   async setVoice(settings) {
     this.voice = settings;
-    this.calls.push(['setVoice', settings.conversation_voice]);
-    return { applied: true, result: { conversation_voice: settings.conversation_voice } };
+    this.calls.push(['setVoice', settings]);
+    return { applied: true, result: { ...settings } };
   }
   async interject(id, text) {
     this.calls.push(['interject', id, text]);
@@ -213,15 +213,15 @@ test('say and the transcript go through Meet Bot, and the key stays out of tool 
   const listed = await json('list_meetings');
   created.meeting_id = listed.meetings.find((m) => m.link === created.link).meeting_id;
   await json('start_meeting', { meeting_id: created.meeting_id });
-  assert.equal(bot.voice, null);
-  assert.equal(bot.calls.some((c) => c[0] === 'setVoice'), false);
+  // Contract version 2: each join hands only the two switches.
+  assert.deepEqual(bot.voice, { respond_to_command: true, speak: true });
   assert.equal(bot.calls.some((c) => c[0] === 'say'), false);
 
   const status = await json('status');
-  assert.equal(status.voice.handed, false);
+  assert.equal(status.voice.handed, true);
   assert.equal(status.voice.conversation_voice, 'local');
   assert.equal(status.voice.model, 'local-model');
-  assert.match(status.voice.gap, /setVoice/);
+  assert.equal(status.voice.gap, null);
   assert.equal(JSON.stringify(status).includes(KEY), false);
   assert.equal(JSON.stringify(status).includes('127.0.0.1:9'), false);
   assert.equal(JSON.stringify(status).includes('127.0.0.1:10'), false);
@@ -259,11 +259,7 @@ test('say and the transcript go through Meet Bot, and the key stays out of tool 
   assert.equal(grok.respond_to_command, false);
   assert.equal(grok.model, null);
   assert.equal(grok.handed, true);
-  assert.equal(bot.voice.conversation_voice, 'grok');
-  assert.equal('llm' in bot.voice, false);
-  assert.equal('tts' in bot.voice, false);
-  assert.equal(bot.voice.stt.provider, 'stt');
-  assert.equal('url' in bot.voice.stt, false);
+  assert.deepEqual(bot.voice, { respond_to_command: false, speak: true });
   assert.equal(JSON.stringify(grok).includes(KEY), false);
 
   bot.interject = async () => { throw new Error('refused ' + KEY); };
@@ -291,7 +287,7 @@ function oldVoiceCall(settings) {
   return !!(settings && (settings.conversation_voice != null || settings.llm || settings.tts || settings.stt));
 }
 
-test('join_meeting does not send the old voice call the new Meet Bot refuses', async () => {
+test('join_meeting hands only respond_to_command and speak, never the old voice call the new Meet Bot refuses', async () => {
   const home = tmpHome('gifos-mcp-newvoice-');
   const cfg = loadConfig({
     GIFOS_MCP_HOME: home,
@@ -331,7 +327,8 @@ test('join_meeting does not send the old voice call the new Meet Bot refuses', a
   const body = JSON.parse(joined.content[0].text);
   assert.equal(body.state, 'live');
   assert.equal(joined.content[0].text.includes(NEW_MEET_BOT_VOICE), false);
-  assert.equal(bot.calls.some((c) => c[0] === 'setVoice'), false);
+  const handed = bot.calls.filter((c) => c[0] === 'setVoice').map((c) => c[1]);
+  assert.deepEqual(handed, [{ respond_to_command: true, speak: true }]);
   assert.equal(bot.calls.some((c) => c[0] === 'join'), true);
   await client.close();
 });

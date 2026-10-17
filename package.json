@@ -1,6 +1,6 @@
 {
   "name": "gifos-mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "GifOS Meet connector for Grok Bot: an MCP server that runs the GifOS Meeting Bot in a headless browser on your own machine.",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
   },
   "scripts": {
     "start": "node bin/gifos-mcp.js",
-    "test": "node test/unit/run.js test/unit/config.test.js test/unit/tools.test.js test/unit/http.test.js test/unit/voice.test.js test/unit/providers.test.js test/unit/invite.test.js test/unit/kokoro.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/stage-a.test.js test/unit/stage-b.test.js test/unit/e2e-work.test.js",
+    "test": "node test/unit/run.js test/unit/config.test.js test/unit/tools.test.js test/unit/http.test.js test/unit/voice.test.js test/unit/providers.test.js test/unit/invite.test.js test/unit/kokoro.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/stage-a.test.js test/unit/stage-b.test.js test/unit/e2e-work.test.js test/unit/meetbot-reply.test.js",
     "test:e2e": "node test/e2e/run.js",
     "test:e2e:stage-b": "node test/e2e/stage-b.js",
     "test:e2e:load": "node test/e2e/load.js"

@@ -243,19 +243,16 @@ It writes `{ url, key, model }` for that role, omitting empty fields, the way `s
 
 This server does not call `place` or `configure`. A hosted role never becomes a GIF, and the key never becomes a Settings field the page can read. `place` would still not let a GIF fetch Kokoro. Speech-to-text stays `install` plus `assign` for the signed store app, unless `GIFOS_STT_URL` is set with `GIFOS_STT_APP=none`, in which case this process serves `stt`. `MeetingBot.setVoice` keeps naming the roles.
 
-`MeetingBot.setVoice` receives roles, not addresses:
+`MeetingBot.setVoice` (contract version 2) receives two switches and nothing else:
 
 ```js
 MeetingBot.setVoice({
-  respond_to_command: true,
-  conversation_voice: "local", // "none" | "grok" | "local"
-  llm: { provider: "smartest" },
-  tts: { provider: "tts", engine: "kokoro", app: "mcp-tts-kokoro", voice: "af_heart" },
-  stt: { provider: "stt" }
+  respond_to_command: true, // answer "Hey bot" commands it hears
+  speak: true               // false when conversation_voice is "none"
 })
 ```
 
-`llm` and `tts` are included only for `conversation_voice: "local"`. `stt` is included when a speech-to-text app or `GIFOS_STT_URL` is set. The object never includes `llm.url`, `llm.key`, `tts.url`, or `stt.url`. The key is written into `gifos_ai_config` on the GifOS origin, which is where a person types it in Settings. It is not a tool result and it is not an argument of `setVoice`.
+Meet Bot v2 starts with both switches off and refuses the version 1 fields (`conversation_voice`, `llm`, `tts`, `stt`). It speaks with the host's Smartest and Text to speech roles, which this process registers and answers. `start_meeting`, `join_meeting` and `set_voice` hand the switches again on every join, so a restarted app does not stay quiet. `status.voice.handed` is true once the app takes them; a refusal is reported as `status.voice.gap`. The object never carries a URL, a model or a key.
 
 The published host (`js/host-voice.js` on gifos-app `cursor/meetbot-host-ops`) still stores a raw URL and fetches it from the host page. Meeting Bot v2 (`gifos-apps-source` `cursor/meetbot-voice-control`) copies `llm.url`, `llm.model`, and `llm.key` into the host and drops any other field. The driver adds an init script on the GifOS host page that wraps `HostVoice` after `host-voice.js` assigns it, and that wraps `GifOS.providers` for the roles this process serves:
 
