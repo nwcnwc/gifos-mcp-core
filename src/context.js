@@ -47,7 +47,8 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   // The names the bot sits under, and the one in this meeting's room (stage
   // B: worker n is <name>-wn).
   const ourNames = () => (typeof bot.botNames === 'function' ? bot.botNames() : [botName]);
-  const nameIn = (m) => (typeof bot.botNameFor === 'function' ? bot.botNameFor(m.session_id) : botName) || 'Meet Bot';
+  // Live, so a renamed bot (set_bot_profile) is credited by its new name.
+  const nameIn = (m) => (typeof bot.botNameFor === 'function' ? bot.botNameFor(m.session_id) : ourNames()[0]) || 'Meet Bot';
 
   function secrets() {
     return secret.concat(schedule.all().map((o) => o.room_password).filter(Boolean));

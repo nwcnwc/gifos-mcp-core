@@ -32,6 +32,8 @@ export function loadConfig(env = process.env) {
     relay: String(env.GIFOS_RELAY || '').trim(),
     botName: String(env.GIFOS_BOT_NAME || '').trim(),
     botPassword: String(env.GIFOS_BOT_PASSWORD || ''),
+    // The bot's picture in rooms: a GIF, PNG, JPEG or WebP file, at most 256 KB.
+    botPicture: String(env.GIFOS_BOT_PICTURE || '').trim(),
     sttApp: stt === 'none' ? '' : stt,
     headless: env.GIFOS_HEADLESS !== '0',
     chrome: String(env.GIFOS_CHROME || '').trim(),
@@ -141,17 +143,30 @@ export function generateCredentials() {
   return { name, password };
 }
 
-// The bot credential is the only secret. It stays in GIFOS_MCP_HOME/bot.json
-// (mode 0600) unless the user passes GIFOS_BOT_NAME / GIFOS_BOT_PASSWORD.
+// The bot's name is what people see in a room; its password is the secret.
+// Both live in GIFOS_MCP_HOME/bot.json (mode 0600). GIFOS_BOT_NAME alone sets
+// the name and keeps the stored (or a new) password; GIFOS_BOT_PASSWORD may
+// be given too. set_bot_profile changes the name in bot.json.
 export function botCredentials(cfg) {
-  if (cfg.botName || cfg.botPassword) {
-    const p = credentialProblem(cfg.botName, cfg.botPassword);
-    if (p) throw new Error('GIFOS_BOT_NAME / GIFOS_BOT_PASSWORD: ' + p);
-    return { name: cfg.botName, password: cfg.botPassword, source: 'env' };
-  }
   const file = path.join(cfg.home, 'bot.json');
   // A file that cannot be read is kept aside: it is the bot's old identity.
   const saved = readPrivate(file, 'generating a new bot name and password', (x) => x && !credentialProblem(x.name, x.password));
+  if (cfg.botName || cfg.botPassword) {
+    const name = cfg.botName || (saved && saved.name) || generateCredentials().name;
+    let password = cfg.botPassword;
+    let source = 'env';
+    if (!password) {
+      password = saved && saved.password ? saved.password : generateCredentials().password;
+      source = 'env name';
+      if (!saved || saved.password !== password) {
+        fs.mkdirSync(cfg.home, { recursive: true, mode: 0o700 });
+        writePrivate(file, JSON.stringify({ name, password }, null, 2) + '\n');
+      }
+    }
+    const p = credentialProblem(name, password);
+    if (p) throw new Error((cfg.botPassword ? 'GIFOS_BOT_NAME / GIFOS_BOT_PASSWORD: ' : 'GIFOS_BOT_NAME: ') + p);
+    return { name, password, source };
+  }
   if (saved) return { name: saved.name, password: saved.password, source: 'file' };
   const fresh = generateCredentials();
   fs.mkdirSync(cfg.home, { recursive: true, mode: 0o700 });

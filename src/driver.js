@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { launchInstalled } from './browser.js';
+import { botPicture } from './profile.js';
 import { log } from './log.js';
 import { VOICE_GAP, INTERJECT_GAP, HAND_GAP, MIC_GAP, CAMERA_GAP, CONTROLS_GAP, SNAPSHOT_GAP } from './voice/settings.js';
 import { bridgeScript, hostRoles, HOST_BINDING, installPlan } from './voice/providers.js';
@@ -81,6 +82,10 @@ export class MeetingBotDriver {
     this.browserName = used;
     log('browser: ' + used);
     const init = { gifos_meet_bar: '0', gifos_name: this.creds.name };
+    // The bot's picture, as GifOS keeps a person's (gifos_avatar). Rooms send
+    // it to everyone, the same as anyone's picture.
+    const picture = this.picture === undefined ? botPicture(this.cfg) : this.picture;
+    if (picture) init.gifos_avatar = JSON.stringify(picture);
     if (this.cfg.relay) init.gifos_relay = this.cfg.relay;
     const roles = hostRoles(this.cfg);
     if (roles.length) {
@@ -415,8 +420,32 @@ export class MeetingBotDriver {
     return { applied: taken.applied, gap: taken.gap || null, png, result: taken.result == null ? null : taken.result };
   }
 
+  botNames() { return [this.creds.name]; }
+  botNameFor() { return this.creds.name; }
+
+  // A new name or picture from set_bot_profile. The picture goes to the
+  // running profile at once (rooms joined from now on send it). A new name
+  // restarts Meeting Bot, so only when it is in no room.
+  async setLook({ name, picture }) {
+    if (picture !== undefined) {
+      this.picture = picture;
+      const desk = this.bot && this.bot.desk;
+      if (desk && !desk.isClosed()) {
+        await desk.evaluate((rec) => {
+          if (window.GifOS && GifOS.store && GifOS.store.setAvatar) GifOS.store.setAvatar(rec);
+          else if (rec) localStorage.setItem('gifos_avatar', JSON.stringify(rec)); else localStorage.removeItem('gifos_avatar');
+        }, picture || null).catch(() => {});
+      }
+    }
+    if (name && name !== this.creds.name) {
+      this.creds.name = name;
+      if (this.state === 'ready' || this.bot) await this.close();
+    }
+    return { name: this.creds.name, picture: !!(this.picture === undefined ? botPicture(this.cfg) : this.picture) };
+  }
+
   async info() {
-    const out = { state: this.state, bot_name: this.creds.name, stt_ready: !!this.sttFileId };
+    const out = { state: this.state, bot_name: this.creds.name, bot_picture: !!(this.picture === undefined ? botPicture(this.cfg) : this.picture), stt_ready: !!this.sttFileId };
     if (this.error) out.error = this.error;
     if (this.state === 'ready') {
       try {

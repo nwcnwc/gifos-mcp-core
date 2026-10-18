@@ -9,6 +9,8 @@ import { publicView, roomFromLink } from '../meetings.js';
 import { CONTROLS_GAP, INTERJECT_GAP, SNAPSHOT_GAP, scrub } from '../voice/settings.js';
 import { WAKE_RE, QUESTION_RE } from '../voice/wake.js';
 import { publicOrder, capacityAt } from '../schedule.js';
+import { credentialProblem } from '../config.js';
+import { pictureFromFile, savePicture, saveName } from '../profile.js';
 
 export const meetingId = z.string().min(3).max(40).describe('The meeting_id of the room (from create_meeting, join_meeting, create_broadcast or join_broadcast).');
 
@@ -134,6 +136,38 @@ export function registerSharedTools(server, ctx, { name, version }) {
     const have = transcript.lines.some((l) => l.meeting_id === m.meeting_id && l.kind === 'spoken' && l.speaker === speaker && l.text === body);
     if (body && !have) transcript.append({ meeting_id: m.meeting_id, speaker, text: body, kind: 'spoken' });
     return ok({ meeting_id: m.meeting_id, spoken: true });
+  }));
+
+  server.registerTool('set_bot_profile', {
+    title: 'Set how the bot looks in rooms',
+    description: 'Sets the name everyone sees on the bot\'s tile, and its picture (a GIF, PNG, JPEG or WebP file on this computer, at most 256 KB). Both are kept for later starts. The picture applies to rooms the bot joins from now on. A new name restarts the bot, so it is refused while the bot is in a room: end_meeting first. GIFOS_BOT_NAME and GIFOS_BOT_PICTURE, when set, win again at the next start.',
+    inputSchema: {
+      name: z.string().min(3).max(40).optional().describe('The name people see, 3 to 40 characters.'),
+      picture_path: z.string().min(1).max(4096).optional().describe('Path to an image file on this computer.'),
+      clear_picture: z.boolean().optional().describe('true removes the picture (people see the first letter of the name).'),
+    },
+  }, guarded(async ({ name, picture_path, clear_picture }) => {
+    if (!name && !picture_path && !clear_picture) throw new Error('Give a name, a picture_path, or clear_picture.');
+    if (typeof bot.setLook !== 'function') throw new Error('With several workers (GIFOS_WORKERS > 1), set GIFOS_BOT_NAME and GIFOS_BOT_PICTURE and restart the server.');
+    const password = secret[0];
+    const current = ourNames()[0];
+    if (name) {
+      const bad = credentialProblem(name, password);
+      if (bad) throw new Error(bad);
+      if (name !== current && meetings.all().some((m) => m.state === 'live')) {
+        throw new Error('The bot is in a room; its name can change when it is in none (end_meeting first).');
+      }
+    }
+    let picture;
+    if (clear_picture) picture = null;
+    else if (picture_path) picture = pictureFromFile(picture_path);
+    if (picture !== undefined) savePicture(cfg.home, picture);
+    if (name && name !== current) saveName(cfg.home, name, password);
+    const look = await bot.setLook({ name: name || undefined, picture });
+    const notes = [];
+    if (name && cfg.botName && cfg.botName !== name) notes.push('GIFOS_BOT_NAME is set, so the next start uses that name again.');
+    if (picture !== undefined && cfg.botPicture) notes.push('GIFOS_BOT_PICTURE is set, so the next start uses that picture again.');
+    return ok({ name: look.name, picture: look.picture, notes });
   }));
 
   server.registerTool('wait_lines', {

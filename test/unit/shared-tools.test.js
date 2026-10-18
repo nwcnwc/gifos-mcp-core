@@ -10,7 +10,10 @@ import { createServer } from '../../src/server.js';
 import { createContext } from '../../src/context.js';
 import { loadConfig } from '../../src/config.js';
 import { MeetingStore, publicView } from '../../src/meetings.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { tmpHome } from './fixtures/tmp-home.js';
+import { tinyPng } from './profile.test.js';
 
 class FakeBot {
   constructor() { this.calls = []; this.seq = 0; this.voice = null; }
@@ -22,6 +25,8 @@ class FakeBot {
   async transcript() { return ''; }
   async info() { return { state: 'ready', bot_name: 'notes-test' }; }
   async setVoice(v) { this.voice = v; return { applied: true, result: v }; }
+  async setLook(look) { this.calls.push(['setLook', look]); if (look.name) this.name = look.name; if (look.picture !== undefined) this.picture = look.picture; return { name: this.name || 'notes-test', picture: !!this.picture }; }
+  botNames() { return [this.name || 'notes-test']; }
   async interject(id, text, opts) { this.calls.push(['interject', id, text, opts || null]); return { applied: true }; }
 }
 
@@ -95,4 +100,33 @@ test('wait_lines returns as soon as a line lands, and marks lines addressed to t
   const none = json(await call('wait_lines', { meeting_id: m.meeting_id, since: next.next, timeout_ms: 300 }));
   assert.equal(none.lines.length, 0);
   assert.ok(Date.now() - quiet >= 280, 'with nothing new it waits for timeout_ms');
+});
+
+test('set_bot_profile: the operator names the bot and gives it a picture; the name waits until it is in no room', async () => {
+  const png = path.join(home, 'face.png'); fs.writeFileSync(png, tinyPng());
+  const r = json(await call('set_bot_profile', { name: 'Ada\u2019s notes', picture_path: png }));
+  assert.equal(r.name, 'Ada\u2019s notes');
+  assert.equal(r.picture, true);
+  const saved = JSON.parse(fs.readFileSync(path.join(home, 'bot.json'), 'utf8'));
+  assert.equal(saved.name, 'Ada\u2019s notes');
+  assert.equal(saved.password, 'quiet-cedar-42', 'the password is kept');
+  assert.equal(JSON.stringify(r).includes('quiet-cedar-42'), false);
+  assert.equal(fs.statSync(path.join(home, 'bot-picture.json')).mode & 0o777, 0o600);
+  const svg = path.join(home, 'face.svg'); fs.writeFileSync(svg, '<svg/>');
+  const bad = await call('set_bot_profile', { picture_path: svg });
+  assert.equal(bad.isError, true);
+  assert.match(bad.content[0].text, /GIF, PNG, JPEG or WebP/);
+  json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room9' }));
+  const busy = await call('set_bot_profile', { name: 'Other name' });
+  assert.equal(busy.isError, true);
+  assert.match(busy.content[0].text, /in a room/);
+  const cleared = json(await call('set_bot_profile', { clear_picture: true }));
+  assert.equal(cleared.picture, false, 'the picture can change while in a room');
+  assert.equal(fs.existsSync(path.join(home, 'bot-picture.json')), false);
+  assert.equal((await call('set_bot_profile', {})).isError, true);
+  // Lines the renamed bot speaks are credited to its new name.
+  const m = json(await call('list_meetings')).meetings[0];
+  json(await call('say', { meeting_id: m.meeting_id, text: 'Hi.' }));
+  const lines = json(await call('tail_lines', { meeting_id: m.meeting_id })).lines;
+  assert.deepEqual(lines.map((l) => [l.speaker, l.kind]), [['Ada\u2019s notes', 'spoken']]);
 });

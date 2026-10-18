@@ -203,7 +203,7 @@ export function watchCaptions({ meetings, bot, live, intervalMs, botName, scrubT
       // Stopped, restarted or reseated while the call was out: drop it.
       const now = meetings.get(id);
       if (timers.get(id) !== timer || !now || now.state !== 'live' || now.session_id !== session) return;
-      live.ingestCaption(id, text, botName);
+      live.ingestCaption(id, text, typeof botName === 'function' ? botName() : botName);
     } catch (e) { /* the next poll retries */ }
   }
   function tick(id, timer) {
