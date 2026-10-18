@@ -101,7 +101,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       gifos_url: cfg.gifosUrl,
       stt_app: cfg.sttApp || null,
       live_meetings: meetings.all().filter((m) => m.state === 'live').map((m) => m.meeting_id),
-      voice: { ...ctx.voiceState(), tts: cfg.voice.tts.engine === 'none' ? null : { engine: cfg.voice.tts.engine, voice: cfg.voice.tts.voice || null } },
+      voice: { ...ctx.voiceState(), tts: info.tts_unavailable ? { engine: null, error: info.tts_unavailable } : (cfg.voice.tts.engine === 'none' ? null : { engine: cfg.voice.tts.engine, voice: cfg.voice.tts.voice || null }) },
       bot: info,
     });
   }));

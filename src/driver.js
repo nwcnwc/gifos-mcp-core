@@ -38,6 +38,10 @@ export class MeetingBotDriver {
     this.creds = creds;
     this.kokoro = kokoro || null;
     this.kokoroPromise = (hooks && hooks.kokoroPromise) || null;
+    this.kokoroSettled = !this.kokoroPromise;
+    if (this.kokoroPromise) {
+      this.kokoroPromise.then((v) => { this.kokoro = v || null; this.kokoroSettled = true; }, () => { this.kokoro = null; this.kokoroSettled = true; });
+    }
     this.queue = (hooks && hooks.queue) || new SpeechQueue(hooks || {});
     this.state = 'stopped';
     this.error = '';
@@ -149,6 +153,11 @@ export class MeetingBotDriver {
   // Installs (or updates) an app through the GifOS store page, the same
   // clicks a person makes. Returns the installed fileId.
   async installFromStore(desk, slug) {
+    const listing = this.cfg.gifosUrl.replace(/\/$/, '') + '/apps/' + encodeURIComponent(slug) + '/app.json';
+    const listed = await fetch(listing).then((r) => r.ok ? r.json() : null).catch(() => null);
+    if (!listed || listed.appId !== slug) {
+      throw new Error('The GifOS store at ' + this.cfg.gifosUrl + ' has no ' + slug + ' app, or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
+    }
     const have = await this.installedFileId(desk, slug);
     await desk.goto(this.cfg.gifosUrl + '/store.html#app=' + encodeURIComponent(slug), { waitUntil: 'domcontentloaded', timeout: this.cfg.timeoutMs });
     const button = desk.locator('#install, #update').first();
@@ -377,7 +386,11 @@ export class MeetingBotDriver {
           ({ id, text }) => window.MeetingBot.interject(id, text),
           { id: sessionId, text: String(text) },
         ),
-      );
+      ).catch((e) => {
+        const msg = String((e && e.message) || e);
+        if (/Kokoro is not available/.test(msg)) throw new Error('Kokoro is not available on this computer.');
+        throw e;
+      });
     } finally {
       if (this.lineVoice === voice) this.lineVoice = '';
     }
@@ -458,6 +471,9 @@ export class MeetingBotDriver {
 
   async info() {
     const out = { state: this.state, bot_name: this.creds.name, bot_picture: !!(this.picture === undefined ? botPicture(this.cfg) : this.picture), stt_ready: !!this.sttFileId };
+    if (this.kokoroSettled && !this.kokoro && this.cfg.voice && this.cfg.voice.tts && this.cfg.voice.tts.engine === 'kokoro') {
+      out.tts_unavailable = 'Kokoro is not available on this computer.';
+    }
     if (this.error) out.error = this.error;
     if (this.state === 'ready') {
       try {
