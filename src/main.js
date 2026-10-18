@@ -35,11 +35,14 @@ export const ENV_HELP = 'Environment: GIFOS_URL, GIFOS_RELAY, GIFOS_BOT_NAME, GI
 export async function createRuntime(env = process.env) {
   const cfg = loadConfig(env);
   const creds = botCredentials(cfg);
-  let kokoro = null;
-  // With several workers, each worker loads its own Kokoro from the same weights.
+  // Kokoro loads in the background. A stalled or failed download must not
+  // keep the server from answering: scheduling tools do not need speech.
+  // say() reports a clear error if the weights never become ready.
+  let kokoroPromise = null;
   if (cfg.voice.tts.source === 'mcp' && cfg.workers === 1) {
-    log('setting up Kokoro (weights, voice ' + cfg.voice.tts.voice + ')');
-    kokoro = await installKokoro({ home: cfg.home, voice: cfg.voice.tts.voice, host: cfg.voice.tts.weights });
+    log('loading Kokoro in the background (weights, voice ' + cfg.voice.tts.voice + ')');
+    kokoroPromise = installKokoro({ home: cfg.home, voice: cfg.voice.tts.voice, host: cfg.voice.tts.weights })
+      .catch((e) => { log('Kokoro is not available: ' + String((e && e.message) || e)); return null; });
   }
   const meetings = new MeetingStore(cfg.home);
   const schedule = new ScheduleStore(cfg.home);
@@ -56,7 +59,7 @@ export async function createRuntime(env = process.env) {
   // the supervisor and each worker is a child with its own browser.
   const bot = cfg.workers > 1
     ? new WorkerPool(cfg, creds, { workers: cfg.workers, rooms: cfg.workerRooms, onThinking })
-    : new MeetingBotDriver(cfg, creds, kokoro, { queue: new SpeechQueue({ onThinking }) });
+    : new MeetingBotDriver(cfg, creds, null, { queue: new SpeechQueue({ onThinking }), kokoroPromise });
   const live = new LiveTranscript(cfg.home);
   const hide = (text) => scrub(text, [creds.password]);
   const captions = watchCaptions({ meetings, bot, live, intervalMs: cfg.voice.pollMs, botName: () => (typeof bot.botNames === 'function' ? bot.botNames() : creds.name), scrubText: hide });

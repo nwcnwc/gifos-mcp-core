@@ -91,20 +91,15 @@ async function main() {
   process.on('message', onClose);
   process.once('message', async (boot) => {
     const { cfg, creds } = boot || {};
-    let kokoro = null;
+    let kokoroPromise = null;
     if (cfg.voice && cfg.voice.tts && cfg.voice.tts.source === 'mcp') {
-      try {
-        kokoro = await installKokoro({ home: cfg.home, voice: cfg.voice.tts.voice, host: cfg.voice.tts.weights });
-      } catch (e) {
-        // The supervisor sees a lost worker and restarts it with backoff.
-        process.stderr.write(String((e && e.message) || e) + '\n');
-        process.exit(1);
-      }
+      kokoroPromise = installKokoro({ home: cfg.home, voice: cfg.voice.tts.voice, host: cfg.voice.tts.weights })
+        .catch((e) => { process.stderr.write('Kokoro is not available: ' + String((e && e.message) || e) + '\n'); return null; });
     }
     process.removeListener('disconnect', onDisconnect);
     process.removeListener('message', onClose);
     if (!process.connected) process.exit(1);
-    serveWorker(process, (queue) => new MeetingBotDriver(cfg, creds, kokoro, { queue }));
+    serveWorker(process, (queue) => new MeetingBotDriver(cfg, creds, null, { queue, kokoroPromise }));
   });
   process.send({ event: 'boot' });
 }

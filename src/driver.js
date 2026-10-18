@@ -37,6 +37,7 @@ export class MeetingBotDriver {
     this.cfg = cfg;
     this.creds = creds;
     this.kokoro = kokoro || null;
+    this.kokoroPromise = (hooks && hooks.kokoroPromise) || null;
     this.queue = (hooks && hooks.queue) || new SpeechQueue(hooks || {});
     this.state = 'stopped';
     this.error = '';
@@ -114,7 +115,13 @@ export class MeetingBotDriver {
     const tts = voice.tts || {};
     const roles = new Set(hostRoles(this.cfg));
     return {
-      kokoro: tts.source === 'mcp' ? this.kokoro : null,
+      kokoro: tts.source === 'mcp' ? async () => {
+        if (this.kokoro) return this.kokoro;
+        if (this.kokoroPromise) {
+          try { this.kokoro = await this.kokoroPromise; } catch (e) { this.kokoro = null; }
+        }
+        return this.kokoro;
+      } : null,
       tts: tts.engine === 'http' ? { url: tts.url, voice: tts.voice || '' } : null,
       stt: roles.has('stt') ? { url: voice.sttUrl } : null,
       queue: this.queue,
@@ -164,7 +171,9 @@ export class MeetingBotDriver {
       await desk.waitForFunction(() => !document.querySelector('#update'), null, { timeout: this.cfg.timeoutMs }).catch(() => {});
       return have;
     }
-    await desk.waitForURL(/index\.html/, { timeout: this.cfg.timeoutMs });
+    await desk.waitForURL(/index\.html/, { timeout: this.cfg.timeoutMs }).catch(() => {
+      throw new Error('The GifOS store at ' + this.cfg.gifosUrl + ' has no meeting-bot app, or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
+    });
     await desk.waitForSelector('.icon', { timeout: this.cfg.timeoutMs });
     // The store writes the file, then the desktop places its icon (a provider
     // app into Providers). Leaving the page earlier loses the icon.
@@ -269,8 +278,11 @@ export class MeetingBotDriver {
     this.state = 'starting';
     this.error = '';
     fs.mkdirSync(this.cfg.home, { recursive: true, mode: 0o700 });
-    if (this.cfg.voice.tts.source === 'mcp' && !this.kokoro) {
-      this.kokoro = await installKokoro({ home: this.cfg.home, voice: this.cfg.voice.tts.voice, host: this.cfg.voice.tts.weights });
+    // Speech weights load in the background (createRuntime). Starting the
+    // browser does not wait on them; say() fails clearly if they never arrive.
+    if (this.cfg.voice.tts.source === 'mcp' && !this.kokoro && !this.kokoroPromise) {
+      this.kokoroPromise = installKokoro({ home: this.cfg.home, voice: this.cfg.voice.tts.voice, host: this.cfg.voice.tts.weights })
+        .catch((e) => { log('Kokoro is not available: ' + String((e && e.message) || e)); return null; });
     }
     let audio = this.cfg.botAudio;
     if (!audio) { audio = path.join(this.cfg.home, 'silence.wav'); if (!fs.existsSync(audio)) silenceWav(audio); }

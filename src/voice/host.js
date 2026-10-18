@@ -24,7 +24,8 @@ async function serveHostOnce(services, role, req, fetchImpl) {
   if (role === 'tts') {
     const asked = typeof s.lineVoice === 'function' ? s.lineVoice() : '';
     if (asked) req = { ...(req || {}), voice: asked };
-    if (s.kokoro) return speakAsTts(s.kokoro, req);
+    const engine = typeof s.kokoro === 'function' ? await s.kokoro() : s.kokoro;
+    if (engine) return speakAsTts(engine, req);
     if (s.tts && s.tts.url) return fetchSpeech(s.tts, req, fetchFn);
     throw new Error('Kokoro is not available on this computer.');
   }

@@ -153,7 +153,7 @@ test('weights are asked for at the pinned revision, never a moving branch', asyn
   for (const p of w.paths) assert.match(p, new RegExp('/resolve/' + KOKORO_REVISION + '/'), p);
 });
 
-test('the binary exits 1 with one Kokoro line when the weights will not load', async (t) => {
+test('the server stays up and says Kokoro is not available when the weights will not load', async (t) => {
   const home = freshHome(t);
   fs.mkdirSync(path.join(modelDir(home), 'onnx'), { recursive: true });
   fs.writeFileSync(path.join(modelDir(home), 'config.json'), CONFIG);
@@ -167,11 +167,21 @@ test('the binary exits 1 with one Kokoro line when the weights will not load', a
     GIFOS_VOICE: '0', GIFOS_LLM_URL: '', GIFOS_LLM_KEY: '', GIFOS_TTS_ENGINE: '', GIFOS_TTS_URL: '', GIFOS_TTS_APP: '', GIFOS_WORKERS: '1',
   });
   t.after(() => bin.proc.kill('SIGKILL'));
-  const out = await Promise.race([bin.done, new Promise((r) => setTimeout(() => r(null), 60000).unref())]);
-  assert.ok(out, 'the binary exits; stderr: ' + bin.stderr.slice(-2000));
-  assert.equal(out.code, 1, 'exit 1, not a crash code; stderr: ' + out.stderr.slice(-2000));
-  assert.match(out.stderr, /Kokoro could not load/);
-  assert.equal(/var A=void 0/.test(out.stderr), false, 'no minified phonemizer source in the log');
+  const seen = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 20000);
+    const look = () => {
+      if (/Kokoro is not available/.test(bin.stderr) && /ready on stdio/.test(bin.stderr)) {
+        clearTimeout(timer); resolve(true);
+      }
+    };
+    bin.proc.stderr.on('data', look);
+    bin.proc.on('exit', () => { clearTimeout(timer); resolve(false); });
+    look();
+  });
+  assert.equal(bin.proc.exitCode, null, 'the server stays up; stderr: ' + bin.stderr.slice(-2000));
+  assert.ok(seen, 'logged Kokoro is not available after ready; stderr: ' + bin.stderr.slice(-2000));
+  assert.match(bin.stderr, /Kokoro is not available/);
+  assert.equal(/var A=void 0/.test(bin.stderr), false, 'no minified phonemizer source in the log');
 });
 
 // Bytes that differ along the file, so a resume that lands at the wrong
