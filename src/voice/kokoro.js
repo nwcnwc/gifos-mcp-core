@@ -23,7 +23,20 @@ export const KOKORO_FILES = Object.freeze({
   'tokenizer.json': '77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34',
   'tokenizer_config.json': 'be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20',
   'onnx/model_quantized.onnx': 'fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478',
+  // fp32 is the fallback when q8 audio is corrupt (AVX-512). Same revision.
+  'onnx/model.onnx': '8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb',
 });
+
+// q8 on an AVX-512 CPU has come back as NaN or peaks like 1.5e15. A real
+// waveform stays inside -1..1. Empty is not corrupt: there was nothing to say.
+export function kokoroAudioCorrupt(samples) {
+  if (!samples || typeof samples.length !== 'number') return true;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    if (!Number.isFinite(s) || s > 1 || s < -1) return true;
+  }
+  return false;
+}
 
 // The SHA-256 a weights file must have, by its path inside the model.
 export function expectedHash(relPath) {
@@ -57,16 +70,18 @@ const loads = new Map();
 export const KOKORO_HOST = 'https://huggingface.co';
 
 // host is a mirror of the Hugging Face layout (GIFOS_KOKORO_URL); empty means huggingface.co.
-export function installKokoro({ home, voice, host } = {}) {
+export function installKokoro({ home, voice, host, dtype } = {}) {
   if (!home) throw new Error('Kokoro needs a directory to keep its weights.');
   const dir = path.join(home, 'kokoro');
-  let pending = loads.get(dir);
+  const kind = dtype || KOKORO_DTYPE;
+  const key = dir + '\n' + kind;
+  let pending = loads.get(key);
   if (!pending) {
-    pending = load(dir, voice || KOKORO_VOICE, host || KOKORO_HOST).catch((e) => {
-      loads.delete(dir);
+    pending = load(dir, voice || KOKORO_VOICE, host || KOKORO_HOST, kind).catch((e) => {
+      loads.delete(key);
       throw e;
     });
-    loads.set(dir, pending);
+    loads.set(key, pending);
   }
   return pending;
 }
@@ -255,7 +270,7 @@ async function importKokoro() {
   return mod;
 }
 
-async function load(dir, voice, host) {
+async function load(dir, voice, host, dtype) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const transformers = await import('@huggingface/transformers');
   transformers.env.cacheDir = dir;
@@ -266,10 +281,11 @@ async function load(dir, voice, host) {
   const { KokoroTTS } = await importKokoro();
   const modelDir = path.join(dir, ...KOKORO_MODEL.split('/'));
   dropDeadParts(modelDir);
-  log('Kokoro: loading ' + KOKORO_MODEL + ' (' + KOKORO_DTYPE + ') into ' + dir);
+  const kind = dtype || KOKORO_DTYPE;
+  log('Kokoro: loading ' + KOKORO_MODEL + ' (' + kind + ') into ' + dir);
   const seen = new Set();
-  const open = () => KokoroTTS.from_pretrained(KOKORO_MODEL, {
-    dtype: KOKORO_DTYPE,
+  const open = (which) => KokoroTTS.from_pretrained(KOKORO_MODEL, {
+    dtype: which,
     device: 'cpu',
     progress_callback: (p) => {
       if (!p || p.status !== 'progress' || p.progress == null) return;
@@ -284,14 +300,14 @@ async function load(dir, voice, host) {
   });
   let tts;
   try {
-    tts = await open();
+    tts = await open(kind);
   } catch (first) {
     // A short or corrupt file from an older run: fetch the weights once more.
     log('Kokoro: the weights in ' + modelDir + ' did not load (' + oneLine(first) + '); downloading them again');
     fs.rmSync(modelDir, { recursive: true, force: true });
     seen.clear();
     try {
-      tts = await open();
+      tts = await open(kind);
     } catch (again) {
       throw new Error('Kokoro could not load from ' + host + ' into ' + dir + ': ' + oneLine(again));
     }
@@ -301,6 +317,7 @@ async function load(dir, voice, host) {
   }
   log('Kokoro is ready (' + voice + ')');
   const loaded = voice || KOKORO_VOICE;
+  let fp32 = kind === 'fp32' ? tts : null;
   const engine = {
     appId: MCP_TTS_APP,
     voice: loaded,
@@ -309,9 +326,20 @@ async function load(dir, voice, host) {
     async speak(text, want) {
       const chosen = nativeVoice(want, loaded, (name) => engine.hasVoice(name));
       if (!tts.voices || !tts.voices[chosen]) throw new Error('Kokoro has no voice ' + JSON.stringify(chosen) + '.');
-      const audio = await tts.generate(String(text || ''), { voice: chosen });
-      const wav = audio.toWav();
-      return Buffer.from(wav);
+      const sayWith = (model) => model.generate(String(text || ''), { voice: chosen });
+      let audio = await sayWith(tts);
+      if (kokoroAudioCorrupt(audio && audio.audio)) {
+        if (kind === 'fp32') throw new Error('Kokoro produced corrupt audio.');
+        log('Kokoro: ' + kind + ' audio was corrupt; speaking again with fp32');
+        if (!fp32) {
+          try { fp32 = await open('fp32'); }
+          catch (e) { throw new Error('Kokoro produced corrupt audio and fp32 did not load: ' + oneLine(e)); }
+        }
+        if (!fp32.voices || !fp32.voices[chosen]) throw new Error('Kokoro has no voice ' + JSON.stringify(chosen) + '.');
+        audio = await sayWith(fp32);
+        if (kokoroAudioCorrupt(audio && audio.audio)) throw new Error('Kokoro produced corrupt audio.');
+      }
+      return Buffer.from(audio.toWav());
     },
   };
   return engine;
