@@ -24,7 +24,7 @@ Grok Bot ──MCP (stdio)──▶ gifos-mcp ──▶ headless Chromium (one p
 
 - `create_meeting` only mints a meeting link. Nothing joins yet.
 - `start_meeting` or `join_meeting` sends the bot into the meeting. Everyone in the meeting sees it as a tile
-  labelled **🤖 bot**. The bot has no camera.
+  labelled **🤖 bot**, and every participant's header shows **📝 Transcribing**. The bot has no camera.
 - Spoken lines are Kokoro, running in this process. This process is the host of the headless GifOS, so it
   injects itself as the `tts` provider (and as `stt` and `smartest` when those are endpoints). The first start
   downloads the weights and the `af_heart` voice. This process does not play the audio into the meeting; Meet Bot does.
@@ -211,8 +211,9 @@ The user tells Grok Bot: *"Set up a demo meeting with Alice and Bob at 5 PM, tak
 - **Everything runs locally.** The browser, the bot, one shared speech-to-text engine, and the
   transcripts are all on your machine. Media goes peer to peer between participants. GifOS's relay only helps
   peers find each other.
-- **The bot is visible.** Everyone sees it as a tile labelled 🤖 bot for as long as it is in the meeting.
-  `mute` stops it writing the meeting down; `end_meeting` takes it out.
+- **Consent is visible.** A GifOS meeting is always written down, and every participant's header always
+  shows **📝 Transcribing**, also when the call is calm. The bot is a tile labelled 🤖 bot for as long as it is
+  in the meeting. `mute` stops the bot writing the meeting down; `end_meeting` takes it out.
 - **The bot never uses your microphone or camera.** It joins with no camera, Meeting Bot never transcribes its
   own machine's microphone, and its browser is fed a silent fake microphone anyway.
 - **Only one secret.** The bot name and password derive Meeting Bot's secret admin meeting, which can command
