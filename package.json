@@ -19,7 +19,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node test/unit/run.js test/unit/browser.test.js test/unit/profile.test.js test/unit/config.test.js test/unit/links.test.js test/unit/invite.test.js test/unit/shared-tools.test.js test/unit/providers.test.js test/unit/kokoro.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js"
+    "test": "node test/unit/run.js test/unit/browser.test.js test/unit/profile.test.js test/unit/config.test.js test/unit/links.test.js test/unit/invite.test.js test/unit/shared-tools.test.js test/unit/providers.test.js test/unit/kokoro.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/store-listing.test.js"
   },
   "keywords": [
     "mcp",

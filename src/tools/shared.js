@@ -34,7 +34,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
   } = ctx;
   server.registerTool('mute', {
     title: 'Mute the bot (stop listening)',
-    description: 'Stops captions for this meeting. The microphone is separate: set_mic turns that on or off. This tool only stops transcription.',
+    description: 'Stops captions for this meeting. This tool only stops transcription.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = needLive(meeting_id);
@@ -611,7 +611,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
     }),
     {
       title: 'Live meeting transcript',
-      description: 'Newline-delimited JSON for one meeting, tailed from Meet Bot. Each line is {seq, ts, speaker, text, kind}. Subscribe for updates while the meeting is live. After the meeting, read it and do the follow-up yourself.',
+      description: 'Newline-delimited JSON for one meeting, tailed from Meeting Bot. Each line is {seq, ts, speaker, text, kind}. Subscribe for updates while the meeting is live. After the meeting, read it and do the follow-up yourself.',
       mimeType: 'application/x-ndjson',
     },
     async (uri, vars) => {

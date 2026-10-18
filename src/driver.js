@@ -20,6 +20,18 @@ import { SpeechQueue } from './voice/queue.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The store listing for one app. Fails at once when app.json is missing or
+// names a different app, before any store page is opened.
+export async function storeAppListing(gifosUrl, slug) {
+  const base = String(gifosUrl || '').replace(/\/$/, '');
+  const listing = base + '/apps/' + encodeURIComponent(slug) + '/app.json';
+  const listed = await fetch(listing).then((r) => r.ok ? r.json() : null).catch(() => null);
+  if (!listed || listed.appId !== slug) {
+    throw new Error('The GifOS store at ' + base + ' has no ' + slug + ' app, or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
+  }
+  return listed;
+}
+
 // A short silent WAV for the bot's fake microphone, so the bot never opens
 // the real microphone of the machine it runs on.
 function silenceWav(file) {
@@ -153,11 +165,7 @@ export class MeetingBotDriver {
   // Installs (or updates) an app through the GifOS store page, the same
   // clicks a person makes. Returns the installed fileId.
   async installFromStore(desk, slug) {
-    const listing = this.cfg.gifosUrl.replace(/\/$/, '') + '/apps/' + encodeURIComponent(slug) + '/app.json';
-    const listed = await fetch(listing).then((r) => r.ok ? r.json() : null).catch(() => null);
-    if (!listed || listed.appId !== slug) {
-      throw new Error('The GifOS store at ' + this.cfg.gifosUrl + ' has no ' + slug + ' app, or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
-    }
+    await storeAppListing(this.cfg.gifosUrl, slug);
     const have = await this.installedFileId(desk, slug);
     await desk.goto(this.cfg.gifosUrl + '/store.html#app=' + encodeURIComponent(slug), { waitUntil: 'domcontentloaded', timeout: this.cfg.timeoutMs });
     const button = desk.locator('#install, #update').first();
@@ -286,6 +294,9 @@ export class MeetingBotDriver {
   async start() {
     this.state = 'starting';
     this.error = '';
+    // Meeting Bot's listing first. A later provider (Offline Captions) can be
+    // listed and still hang its store page; that must not hide a missing bot.
+    await storeAppListing(this.cfg.gifosUrl, 'meeting-bot');
     fs.mkdirSync(this.cfg.home, { recursive: true, mode: 0o700 });
     // Speech weights load in the background (createRuntime). Starting the
     // browser does not wait on them; say() fails clearly if they never arrive.
