@@ -38,5 +38,12 @@
     "kokoro-js": "1.2.1",
     "playwright": "1.61.1",
     "zod": "3.25.76"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "GifOS (https://gifos.app)",
+  "bugs": {
+    "url": "https://github.com/nwcnwc/gifos-mcp-core/issues"
   }
 }
