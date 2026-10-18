@@ -318,6 +318,9 @@ async function load(dir, voice, host, dtype) {
   log('Kokoro is ready (' + voice + ')');
   const loaded = voice || KOKORO_VOICE;
   let fp32 = kind === 'fp32' ? tts : null;
+  // q8 stays corrupt on this CPU. Remember it so the next line does not
+  // generate the bad audio and then throw it away.
+  let preferFp32 = kind === 'fp32';
   const engine = {
     appId: MCP_TTS_APP,
     voice: loaded,
@@ -327,16 +330,25 @@ async function load(dir, voice, host, dtype) {
       const chosen = nativeVoice(want, loaded, (name) => engine.hasVoice(name));
       if (!tts.voices || !tts.voices[chosen]) throw new Error('Kokoro has no voice ' + JSON.stringify(chosen) + '.');
       const sayWith = (model) => model.generate(String(text || ''), { voice: chosen });
-      let audio = await sayWith(tts);
-      if (kokoroAudioCorrupt(audio && audio.audio)) {
-        if (kind === 'fp32') throw new Error('Kokoro produced corrupt audio.');
-        log('Kokoro: ' + kind + ' audio was corrupt; speaking again with fp32');
+      const ensureFp32 = async () => {
         if (!fp32) {
           try { fp32 = await open('fp32'); }
           catch (e) { throw new Error('Kokoro produced corrupt audio and fp32 did not load: ' + oneLine(e)); }
         }
         if (!fp32.voices || !fp32.voices[chosen]) throw new Error('Kokoro has no voice ' + JSON.stringify(chosen) + '.');
-        audio = await sayWith(fp32);
+        return fp32;
+      };
+      let audio;
+      if (preferFp32 && kind !== 'fp32') {
+        audio = await sayWith(await ensureFp32());
+      } else {
+        audio = await sayWith(tts);
+      }
+      if (kokoroAudioCorrupt(audio && audio.audio)) {
+        if (kind === 'fp32' || preferFp32) throw new Error('Kokoro produced corrupt audio.');
+        preferFp32 = true;
+        log('Kokoro: ' + kind + ' audio was corrupt; speaking again with fp32');
+        audio = await sayWith(await ensureFp32());
         if (kokoroAudioCorrupt(audio && audio.audio)) throw new Error('Kokoro produced corrupt audio.');
       }
       return Buffer.from(audio.toWav());
