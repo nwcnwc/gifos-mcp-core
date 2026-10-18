@@ -24,7 +24,7 @@ Grok Bot ──MCP (stdio)──▶ gifos-mcp ──▶ headless Chromium (one p
 
 - `create_meeting` only mints a meeting link. Nothing joins yet.
 - `start_meeting` or `join_meeting` sends the bot into the meeting. Everyone in the meeting sees it as a tile
-  labelled **🤖 bot** with a **📝 transcribing** chip. The bot has no camera.
+  labelled **🤖 bot**. The bot has no camera.
 - Spoken lines are Kokoro, running in this process. This process is the host of the headless GifOS, so it
   injects itself as the `tts` provider (and as `stt` and `smartest` when those are endpoints). The first start
   downloads the weights and the `af_heart` voice. This process does not play the audio into the meeting; Meet Bot does.
@@ -155,7 +155,7 @@ If your client can only reach MCP over HTTP, run `gifos-mcp --http [port]`. It l
 | `create_meeting` | `name`, `admin_password` | `{ link }`. Mints the room. `admin_password` is the human's password for this call only. It is not stored, not logged, and not returned. Grok Bot invents the room password and sends the invite. |
 | `start_meeting` | `meeting_id` | The bot joins and starts transcribing. |
 | `join_meeting` | `link`, `password?`, `topic?` | The bot joins someone else's GifOS meeting (`…/run.html#v=…` or `…/meet/…`). Returns a `meeting_id`. |
-| `mute` | `meeting_id` | The bot stops transcribing, and the transcribing chip goes away. The bot never sends audio, so this is the only mute it has. |
+| `mute` | `meeting_id` | The bot stops transcribing. The bot never sends audio, so this is the only mute it has. |
 | `unmute` | `meeting_id` | The bot transcribes again. |
 | `share_content` | `meeting_id`, `text` | Posts text or a link (up to 2000 characters) into the meeting chat as the bot. There is no screen sharing, because the bot has no screen. This is chat, not speech. |
 | `get_transcript` | `meeting_id` | Plain text, one `speaker: words` line per caption. Works while the meeting is live and after `end_meeting`. |
@@ -198,7 +198,7 @@ The user tells Grok Bot: *"Set up a demo meeting with Alice and Bob at 5 PM, tak
    with the link and that room password. It never sends the admin password.
 3. **Schedule.** Grok Bot calls `schedule_meeting({link, room_password, start, end})`. The bot joins one minute
    before `start`. The room password is stored on the schedule so a restart can rejoin. The admin password is not.
-4. **Meeting (17:00 onward).** Alice and Bob open the link and see the 🤖 bot tile with the transcribing chip.
+4. **Meeting (17:00 onward).** Alice and Bob open the link and see the 🤖 bot tile.
    While the bot is working out a reply, that tile shows a thinking animation.
    If the voice setting was handed over, Meet Bot talks (Grok Voice, or the local LLM). Grok Bot tails
    `gifos://meeting/{id}/transcript` (or calls `tail_transcript`) and can `say` a line of its own. Grok Bot can
@@ -211,8 +211,8 @@ The user tells Grok Bot: *"Set up a demo meeting with Alice and Bob at 5 PM, tak
 - **Everything runs locally.** The browser, the bot, one shared speech-to-text engine, and the
   transcripts are all on your machine. Media goes peer to peer between participants. GifOS's relay only helps
   peers find each other.
-- **Consent is visible.** The bot is labelled 🤖 bot and shows 📝 transcribing whenever it listens. `mute`
-  removes the chip.
+- **The bot is visible.** Everyone sees it as a tile labelled 🤖 bot for as long as it is in the meeting.
+  `mute` stops it writing the meeting down; `end_meeting` takes it out.
 - **The bot never uses your microphone or camera.** It joins with no camera, Meeting Bot never transcribes its
   own machine's microphone, and its browser is fed a silent fake microphone anyway.
 - **Only one secret.** The bot name and password derive Meeting Bot's secret admin meeting, which can command
@@ -282,7 +282,7 @@ Kokoro test keeps its ~90 MB of weights in `~/.cache/gifos-mcp-test-kokoro` betw
    client.
 2. Ask: *"Create a GifOS meeting called Demo meeting and start it."* You get a link back.
 3. Open the link in a normal browser, allow the microphone, turn your mic on, and say a sentence or two. You
-   should see a tile labelled 🤖 bot with 📝 transcribing.
+   should see a tile labelled 🤖 bot.
 4. Ask: *"Share 'Hello from Grok' in the meeting."* It appears in the meeting chat.
 5. After about 30 seconds (longer the first time, while the Whisper model downloads), ask: *"Get the transcript."*
    Your words come back as `YourName: …` lines.

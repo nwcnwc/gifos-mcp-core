@@ -124,7 +124,7 @@ export async function peopleBrowser(ws) {
 // mic plays SPEECH instead of TONE.
 export async function personIn(browser, name, log, speech = false) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['camera', 'microphone'] });
-  await ctx.addInitScript({ content: 'try{localStorage.setItem("gifos_name",' + JSON.stringify(name) + ');localStorage.setItem("gifos_meet_bar","0");}catch(e){}' });
+  await ctx.addInitScript({ content: 'try{localStorage.setItem("gifos_name",' + JSON.stringify(name) + ');localStorage.setItem("gifos_meet_bar","0");sessionStorage.setItem("gifos_appeared","1");}catch(e){}' });
   await ctx.addInitScript({ content: speech ? SPEECH : TONE });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => log('  [' + name + '] ' + e.message));

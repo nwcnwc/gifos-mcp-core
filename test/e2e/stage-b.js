@@ -150,8 +150,9 @@ async function main() {
     }
     const seen = [];
     for (let i = 0; i < 2; i++) {
-      const got = await waitTiles(people[i].page, (t) => t.length === 1 && /transcribing/.test(t[0]), 90000);
+      const got = await waitTiles(people[i].page, (t) => t.length === 1 && /bot/.test(t[0]), 90000);
       seen.push(got.tiles.map((t) => t.replace(/\s+/g, ' ')));
+      await people[i].page.mouse.move(200, 200); await people[i].page.mouse.move(220, 220); // wake the calm call buttons
       await people[i].page.locator('#mic').click();
       const micOn = await people[i].page.waitForSelector('#mic:not(.off)', { timeout: 15000 }).then(() => true, () => false);
       check(people[i].name + ' (' + people[i].where + ') turns the microphone on', micOn);

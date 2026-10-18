@@ -254,7 +254,7 @@ export function createServer({ cfg, meetings, bot, live, captions, botName, botP
 
   server.registerTool('start_meeting', {
     title: 'Start a meeting (the bot joins and transcribes)',
-    description: 'The headless Meeting Bot joins the meeting created with create_meeting and starts transcribing. Participants see a 🤖 bot badge and a transcribing chip.',
+    description: 'The headless Meeting Bot joins the meeting created with create_meeting and starts transcribing. Participants see it as a tile with a 🤖 bot badge.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = need(meeting_id);
@@ -298,7 +298,7 @@ export function createServer({ cfg, meetings, bot, live, captions, botName, botP
 
   server.registerTool('mute', {
     title: 'Mute the bot (stop listening)',
-    description: 'Stops the bot transcribing this meeting; the transcribing chip goes away. The bot never sends audio, so this is the only kind of mute it has.',
+    description: 'Stops the bot transcribing this meeting. The bot never sends audio, so this is the only kind of mute it has.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = needLive(meeting_id);

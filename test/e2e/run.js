@@ -169,8 +169,12 @@ async function main() {
         '--autoplay-policy=no-user-gesture-required'],
     });
     const hctx = await human.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['camera', 'microphone'] });
-    await hctx.addInitScript({ content: 'try{localStorage.setItem("gifos_name","Alice");localStorage.setItem("gifos_meet_bar","0");' +
+    await hctx.addInitScript({ content: 'try{localStorage.setItem("gifos_name","Alice");localStorage.setItem("gifos_meet_bar","0");sessionStorage.setItem("gifos_appeared","1");' +
       (relay ? 'localStorage.setItem("gifos_relay",' + JSON.stringify(relay) + ');' : '') + '}catch(e){}' });
+    // Alice's browser has no speech engine (as in Firefox), so Meet Bot is the
+    // one that writes her down. Headless Chromium exposes the API without a
+    // working engine, which would make her claim her own voice and write nothing.
+    await hctx.addInitScript({ content: 'try{window.webkitSpeechRecognition=undefined;window.SpeechRecognition=undefined;}catch(e){}' });
     const alice = await hctx.newPage();
     alice.on('pageerror', (e) => say('  [alice] ' + e.message));
     await alice.goto(meeting.link + '&DEBUG=on', { waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -178,15 +182,17 @@ async function main() {
     let tile = '';
     for (let i = 0; i < 40; i++) {
       tile = await alice.locator('.tile', { has: alice.locator('.botbadge') }).first().innerText();
-      if (/transcribing/.test(tile)) break;
+      if (/bot/.test(tile)) break;
       await sleep(500);
     }
     // GifOS joins with the mic off; Alice turns hers on to talk.
+    // GifOS 0.9.23b fades the call buttons after 3 s without input; a person
+    // moves the pointer to reach them, so the test does too.
+    await alice.mouse.move(200, 200); await alice.mouse.move(220, 220);
     await alice.locator('#mic').click();
     const micOn = await alice.waitForSelector('#mic:not(.off)', { timeout: 15000 }).then(() => true, () => false);
     check('Alice turns her microphone on', micOn);
     check('Alice sees the 🤖 bot badge', /bot/.test(tile), tile.replace(/\s+/g, ' '));
-    check('Alice sees the transcribing chip', /transcribing/.test(tile), tile.replace(/\s+/g, ' '));
     await alice.screenshot({ path: path.join(PROOF, 'alice-sees-bot.png') });
 
     let transcript = '';
@@ -239,12 +245,8 @@ async function main() {
     await alice.screenshot({ path: path.join(PROOF, 'alice-chat.png') });
 
     const muted = JSON.parse(text(await client.callTool({ name: 'mute', arguments: { meeting_id: meeting.meeting_id } }, undefined, CALL)));
-    let chipGone = false;
-    for (let i = 0; i < 40 && !chipGone; i++) {
-      chipGone = !/transcribing/.test(await alice.locator('.tile', { has: alice.locator('.botbadge') }).first().innerText());
-      if (!chipGone) await sleep(500);
-    }
-    check('mute stops transcribing and Alice sees the chip go', muted.muted === true && muted.transcribing === false && chipGone);
+    // GifOS 0.9.23 transcribes in every browser and shows no per-tile chip for it.
+    check('mute stops transcribing', muted.muted === true && muted.transcribing === false);
     const unmuted = JSON.parse(text(await client.callTool({ name: 'unmute', arguments: { meeting_id: meeting.meeting_id } }, undefined, CALL)));
     check('unmute turns transcribing back on', unmuted.transcribing === true);
 

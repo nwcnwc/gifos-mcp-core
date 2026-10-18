@@ -53,7 +53,7 @@ Injected into the app by the runtime. Each call is `postMessage` `{ ns: "gifos",
 | `join(room, passwordOrLink, name, opts)` | `join` | `GifOS.meetHost.join`. `opts.bot` defaults true. `opts.control` marks the admin meeting (`capabilities.remote`). |
 | `leave(id)` | `leave` | Leaves and drops the session iframe. |
 | `sendChat(id, text)` | `sendChat` | Chat line in that session. |
-| `transcribe(id, on)` | `transcribe` | `setTranscribe`. The bot tile shows the transcribing chip. |
+| `transcribe(id, on)` | `transcribe` | `setTranscribe`. |
 | `startRecording` / `stopRecording` / `getRecording` | same names | Recording on the session. |
 | `sendXfer(id, file)` | `sendXfer` | Data-channel file toward the admin meeting. |
 | `list()` | `list` | Sessions on this page. |

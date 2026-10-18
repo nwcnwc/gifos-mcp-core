@@ -178,6 +178,7 @@ async function main() {
       const seen = [];
       for (const p of people) {
         const got = await waitTiles(p.page, (t) => t.length === 1, 120000);
+        await p.page.mouse.move(200, 200).catch(() => {}); await p.page.mouse.move(220, 220).catch(() => {}); // wake the calm call buttons
         await p.page.locator('#mic').click().catch(() => {});
         const micOn = await p.page.waitForSelector('#mic:not(.off)', { timeout: 30000 }).then(() => true, () => false);
         seen.push(got.ok && micOn);
