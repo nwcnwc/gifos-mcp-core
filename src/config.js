@@ -10,23 +10,11 @@ import { readPrivate, writePrivate } from './private-file.js';
 export const DEFAULT_GIFOS_URL = 'https://gifos.app';
 export const DEFAULT_STT_APP = 'offline-stt-whisper';
 
-// Suggested local-LLM setting for Meet Bot: xAI Grok over its public
-// OpenAI-compatible API. grok-4.20-0309-non-reasoning answers without a
-// reasoning pass. When this process hosts smartest, it calls that endpoint.
-// The page does not. GIFOS_LLM_MODEL
-// overrides the model name.
-export const SUGGESTED_LLM_URL = 'https://api.x.ai/v1';
-export const SUGGESTED_LLM_MODEL = 'grok-4.20-0309-non-reasoning';
-
 function cleanBase(u, name) {
   const s = String(u || '').trim().replace(/\/+$/, '');
   if (!s) return '';
   if (!/^https?:\/\/[^/\s]+/.test(s)) throw new Error(name + ' must be an http(s) URL, got: ' + JSON.stringify(u));
   return s;
-}
-
-function hostOf(u) {
-  try { return new URL(u).host; } catch (e) { return ''; }
 }
 
 function cleanUrl(u) {
@@ -88,43 +76,22 @@ function workerRooms(env) {
   return rooms;
 }
 
-const VOICES = new Set(['none', 'grok', 'local']);
-
-// Settings Meet Bot will own. A key with no URL uses the suggested xAI
-// endpoint. This process calls that endpoint only when it hosts smartest.
+// Speech and captions for the bot. There is no text model: the assistant
+// calling the tools writes every line the bot says.
 export function voiceConfig(env = process.env) {
-  const key = String(env.GIFOS_LLM_KEY || '');
-  const llmApp = String(env.GIFOS_LLM_APP || '').trim();
-  const url = env.GIFOS_LLM_URL === undefined || String(env.GIFOS_LLM_URL).trim() === ''
-    ? (key && !llmApp ? SUGGESTED_LLM_URL : '')
-    : cleanBase(env.GIFOS_LLM_URL, 'GIFOS_LLM_URL');
-  const xai = hostOf(url) === 'api.x.ai';
-  const model = String(env.GIFOS_LLM_MODEL || (xai ? SUGGESTED_LLM_MODEL : '')).trim();
-  let conversationVoice = String(env.GIFOS_CONVERSATION_VOICE || '').trim().toLowerCase();
-  if (env.GIFOS_VOICE === '0') conversationVoice = 'none';
-  else if (!conversationVoice) conversationVoice = (key || url || llmApp) ? 'local' : 'none';
-  if (!VOICES.has(conversationVoice)) throw new Error('GIFOS_CONVERSATION_VOICE must be none, grok, or local.');
-  if (conversationVoice === 'local' && !llmApp) {
-    if (!url) throw new Error('GIFOS_LLM_URL or GIFOS_LLM_KEY is required when conversation voice is local.');
-    if (!model) throw new Error('GIFOS_LLM_MODEL is required for this GIFOS_LLM_URL.');
-  }
   const sttRaw = env.GIFOS_STT_APP === undefined ? DEFAULT_STT_APP : String(env.GIFOS_STT_APP).trim();
   const pollRaw = Number(env.GIFOS_TRANSCRIPT_POLL_MS);
   return {
-    conversationVoice,
-    respondToCommand: env.GIFOS_RESPOND_TO_COMMAND !== '0',
-    url,
-    key,
-    model,
-    llmApp,
-    pollMs: pollRaw > 0 ? pollRaw : 500,
+    // How often captions are copied from Meet Bot into the lines that
+    // wait_lines and tail_lines return.
+    pollMs: pollRaw > 0 ? pollRaw : 300,
     tts: ttsConfig(env),
     sttUrl: sttUrl(env),
     sttApp: sttRaw === 'none' ? '' : sttRaw,
   };
 }
 
-// Speech for Meet Bot's local mode. Default Kokoro runs in this process
+// Speech for Meet Bot. Default Kokoro runs in this process
 // (source "mcp"). The headless harness injects this process as the tts
 // provider. GIFOS_TTS_APP names a store provider instead. GIFOS_TTS_URL is
 // fetched by this process, not by the page.

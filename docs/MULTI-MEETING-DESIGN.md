@@ -1,5 +1,10 @@
 # Many meetings, one Meet Bot
 
+> **Superseded in part (gifos-mcp-core 0.1.0).** There is no text model any more: Meet Bot's `speak` and
+> `respond_to_command` are always handed off, nothing hosts `smartest`, and no model URL or key is read. The
+> assistant calling the MCP tools writes every line the bot says (`say` → `MeetingBot.interject` → Kokoro here).
+> The sections below about local LLMs, Grok Voice and `smartest` are kept as history.
+
 Status: stage A of this design (many rooms, one schedule, one shared voice path) is built; see the README for the tools. The fleet sections are still design.
 
 This document does not change the server. It describes how one Meet Bot, driven by one gifos-mcp process, sits in many meetings at once, how it joins on a schedule instead of sitting in a room all day, how a person manages that from the bot app, and how Grok Bot does the same job through MCP. A team or a small company is the first shape. Hundreds and then thousands of meetings are a later fleet. The dashboard a person looks at is built by Grok Bot from raw rows. This server does not draw one.

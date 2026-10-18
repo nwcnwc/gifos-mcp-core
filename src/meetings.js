@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { readPrivate, writePrivate } from './private-file.js';
+import { newRoom, roomFromLink } from './links.js';
 
-const ROOM_RE = /^[A-Za-z0-9-]{1,64}$/;
+export { newRoom, roomFromLink };
 
 function stripSecrets(fields) {
   const out = { ...(fields || {}) };
@@ -16,29 +17,8 @@ function stripSecrets(fields) {
   return out;
 }
 
-export function newRoom() {
-  // 120 random bits. The room name is what the meeting key derives from.
-  const b = crypto.randomBytes(15);
-  let n = BigInt('0x' + b.toString('hex'));
-  let s = '';
-  while (s.length < 24) { s += (n % 36n).toString(36); n /= 36n; }
-  return s;
-}
-
 export function linkFor(gifosUrl, room, relay) {
   return gifosUrl + '/run.html#v=' + room + (relay ? '&relay=' + encodeURIComponent(relay) : '');
-}
-
-// Accepts the links GifOS hands out: /run.html#v=<room>[&...] and /meet/<room>.
-export function roomFromLink(link) {
-  let u;
-  try { u = new URL(String(link)); } catch (e) { return ''; }
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
-  const pretty = /^\/(?:meet|cast)\/([A-Za-z0-9-]{1,64})\/?$/.exec(u.pathname);
-  if (pretty) return pretty[1];
-  const h = new URLSearchParams(u.hash.replace(/^#/, ''));
-  const v = h.get('v') || '';
-  return ROOM_RE.test(v) ? v : '';
 }
 
 export class MeetingStore {

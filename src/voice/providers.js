@@ -1,10 +1,9 @@
 // Settings → AI models, for a store app. install() takes a store slug.
 // assign() points a role at an app already in the Providers folder.
 // This process is the host that embeds the headless GifOS, so it can answer
-// tts, stt, and smartest itself. The page calls one Playwright binding.
+// tts and stt itself. It has no text model. The page calls one Playwright binding.
 // It does not fetch those roles, and no sandboxed provider GIF is mounted
 // for them. A raw URL and the key never go to Meet Bot.
-// See docs/MEETBOT-BRIDGE.md.
 
 import { MCP_TTS_APP, KOKORO_VOICE } from './settings.js';
 import { QUESTION_RE, WAKE_RE } from './wake.js';
@@ -21,7 +20,6 @@ export function hostRoles(cfg) {
   const tts = voice.tts || {};
   const roles = [];
   if (tts.source === 'mcp' || tts.engine === 'http') roles.push('tts');
-  if (!voice.llmApp && (voice.url || voice.key)) roles.push('smartest');
   if (voice.sttUrl && !voice.sttApp) roles.push('stt');
   return roles;
 }
@@ -51,10 +49,6 @@ export function installPlan(cfg) {
   if (!hosted.has('tts')) {
     if (tts.engine === 'http') steps.push({ role: 'tts', endpoint: endpoint(tts) });
     else if (tts.source === 'store' && tts.app) steps.push({ role: 'tts', appId: tts.app });
-  }
-  if (!hosted.has('smartest')) {
-    if (voice.llmApp) steps.push({ role: 'smartest', appId: voice.llmApp });
-    else if (voice.url || voice.key) steps.push({ role: 'smartest', endpoint: endpoint(voice) });
   }
   return steps;
 }
@@ -86,34 +80,14 @@ export function fetchPlan(target, pageUrl) {
   return { proxy: false, url: String(target), headers: {} };
 }
 
-function llmRole(llm) {
-  return (llm && llm.provider) || 'smartest';
-}
-
 // Turn provider names into what the host voice engine stores.
-// An assigned app becomes gifos-provider://<role> with no key.
-// An endpoint's URL and key are filled from Settings here, on the host page,
-// and are not copied back to the app.
+// An assigned app becomes gifos-provider://<role>. There is no text model:
+// a settings object that names one is passed on without it.
 export function expandForHost(settings, ai, hosted) {
   const next = settings ? JSON.parse(JSON.stringify(settings)) : {};
   const config = ai || {};
   const own = new Set(hosted || []);
-  if (next.llm) {
-    const role = llmRole(next.llm);
-    const row = config[role] || {};
-    const bare = !next.llm.url;
-    if (next.llm.provider || bare) {
-      if (row.app || row.appId) {
-        next.llm = { url: 'gifos-provider://' + role, model: String(row.model || next.llm.model || 'provider') };
-      } else if (row.url) {
-        next.llm = { url: String(row.url), model: String(row.model || next.llm.model || '') };
-        if (row.key) next.llm.key = String(row.key);
-      } else if (next.llm.provider) {
-        next.llm = { url: 'gifos-provider://' + role, model: String(next.llm.model || 'provider') };
-      }
-    }
-    if (next.llm && next.llm.key === '') delete next.llm.key;
-  }
+  delete next.llm;
   if (next.tts) {
     const row = config[next.tts.provider || 'tts'] || {};
     const engine = String(next.tts.engine || (row.url ? 'http' : 'kokoro'));
@@ -131,9 +105,6 @@ export function expandForHost(settings, ai, hosted) {
     }
   }
   if (next.stt) next.stt = {};
-  if (own.has('smartest') && next.llm) {
-    next.llm = { url: 'gifos-provider://smartest', model: String(next.llm.model || 'provider') };
-  }
   if (own.has('tts') && next.tts && next.tts.engine !== 'none') {
     next.tts = {
       engine: 'kokoro',
@@ -166,7 +137,7 @@ export async function speakAsTts(engine, req) {
 // assigned(role) is { host: true } for those roles, not a provider GIF.
 // call(role) sends the request to the binding and does not fetch.
 export function bridgeScript(opts) {
-  const allow = new Set(['tts', 'smartest', 'stt']);
+  const allow = new Set(['tts', 'stt']);
   const roles = [];
   for (const role of (opts && opts.hostRoles) || []) {
     if (allow.has(role) && !roles.includes(role)) roles.push(role);
@@ -268,14 +239,13 @@ export function bridgeScript(opts) {
       '    if(typeof origFetch!=="function") return Promise.reject(new Error("The host provider is not available."));\n' +
       '    return origFetch.apply(window, arguments);\n' +
       '  }\n' +
-      '  var role=s.slice(PREFIX.length).split("/")[0]||"smartest";\n' +
+      '  var role=s.slice(PREFIX.length).split("/")[0]||"tts";\n' +
       '  var fn=window[' + bindLit + '];\n' +
       '  if(typeof fn!=="function") return Promise.reject(new Error("The host provider is not available."));\n' +
       '  var body={};\n' +
       '  try{ body=JSON.parse((init&&init.body)||"{}"); }catch(e){ body={}; }\n' +
       '  var req=body||{};\n' +
       '  if(role==="tts") req={ text:String(body.input||body.text||""), voice:String(body.voice||"") };\n' +
-      '  else if(role==="smartest") req={ messages:body.messages||[] };\n' +
       '  return Promise.resolve(fn(role, JSON.stringify(req))).then(function(raw){\n' +
       '    var parsed=typeof raw==="string"?JSON.parse(raw):(raw||{});\n' +
       '    var text=String(parsed.text||"");\n' +
@@ -319,16 +289,7 @@ export function bridgeScript(opts) {
     '  var next={}; var k; settings=settings||{};\n' +
     '  for(k in settings) next[k]=settings[k];\n' +
     '  var ai=readAi();\n' +
-    '  if(next.llm){\n' +
-    '    var role=next.llm.provider||"smartest";\n' +
-    '    var row=ai[role]||{};\n' +
-    '    var bare=!next.llm.url;\n' +
-    '    if(next.llm.provider||bare){\n' +
-    '      if(row.app||row.appId){ next.llm={url:PREFIX+role, model:String(row.model||next.llm.model||"provider")}; }\n' +
-    '      else if(row.url){ next.llm={url:String(row.url), model:String(row.model||next.llm.model||"")}; if(row.key) next.llm.key=String(row.key); }\n' +
-    '      else if(next.llm.provider){ next.llm={url:PREFIX+role, model:String(next.llm.model||"provider")}; }\n' +
-    '    }\n' +
-    '  }\n' +
+    '  delete next.llm;\n' +
     '  if(next.tts){\n' +
     '    var trow=ai[next.tts.provider||"tts"]||{};\n' +
     '    var engine=String(next.tts.engine||(trow.url?"http":"kokoro"));\n' +
@@ -337,7 +298,6 @@ export function bridgeScript(opts) {
     '    else next.tts={engine:"kokoro", app:String(next.tts.app||trow.appId||' + JSON.stringify(MCP_TTS_APP) + '), voice:String(next.tts.voice||"af_heart")};\n' +
     '  }\n' +
     '  if(next.stt) next.stt={};\n' +
-    '  if(HOST.smartest&&next.llm){ next.llm={url:PREFIX+"smartest", model:String(next.llm.model||"provider")}; }\n' +
     '  if(HOST.tts&&next.tts&&next.tts.engine!=="none"){ next.tts={engine:"kokoro", app:String(next.tts.app||"gifos-mcp"), voice:String(next.tts.voice||"af_heart")}; }\n' +
     '  return next;\n' +
     '}\n' +

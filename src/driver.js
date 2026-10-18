@@ -123,9 +123,10 @@ export class MeetingBotDriver {
     return {
       kokoro: tts.source === 'mcp' ? this.kokoro : null,
       tts: tts.engine === 'http' ? { url: tts.url, voice: tts.voice || '' } : null,
-      llm: roles.has('smartest') ? { url: voice.url, key: voice.key, model: voice.model } : null,
       stt: roles.has('stt') ? { url: voice.sttUrl } : null,
       queue: this.queue,
+      // A voice asked for one line (say with voice), while that line is spoken.
+      lineVoice: () => this.lineVoice || '',
     };
   }
 
@@ -359,15 +360,22 @@ export class MeetingBotDriver {
   }
 
   // Spoken interjection from the assistant. Chat stays on say().
-  async interject(sessionId, text) {
-    return this.whenMethod(
-      () => typeof (window.MeetingBot && window.MeetingBot.interject) === 'function',
-      INTERJECT_GAP,
-      () => this.bot.frame.evaluate(
-        ({ id, text }) => window.MeetingBot.interject(id, text),
-        { id: sessionId, text: String(text) },
-      ),
-    );
+  // opts.voice: a Kokoro voice for this line only.
+  async interject(sessionId, text, opts) {
+    const voice = opts && opts.voice ? String(opts.voice) : '';
+    this.lineVoice = voice;
+    try {
+      return await this.whenMethod(
+        () => typeof (window.MeetingBot && window.MeetingBot.interject) === 'function',
+        INTERJECT_GAP,
+        () => this.bot.frame.evaluate(
+          ({ id, text }) => window.MeetingBot.interject(id, text),
+          { id: sessionId, text: String(text) },
+        ),
+      );
+    } finally {
+      if (this.lineVoice === voice) this.lineVoice = '';
+    }
   }
 
   async raiseHand(sessionId, on) {

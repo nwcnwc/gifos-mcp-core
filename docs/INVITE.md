@@ -1,13 +1,25 @@
 # Invites
 
-`create_meeting` returns three things the caller can hand to a person:
+The servers never send mail and never write a calendar file. They return everything an invite needs; the
+assistant that called the tool sends it through its own (or the user's) mail or calendar, after the user approves.
 
-- `link` — a plain meeting URL. It has no password in the query or the hash.
-- `invite_email` — the body of an email. The link is on its own line. When the meeting has a room password, the password is on the next line, for the guest to type.
-- `invite_calendar` — the same text in `description`, and the same plain URL in `url` and `location`.
+`meetingInvite()` (gifos-meet-mcp `create_meeting`) and `broadcastInvite()` (gifos-broadcast-mcp
+`create_broadcast`) return:
 
-The bot password (the name/password pair that opens Meet Bot) is not included in any of those, and tool results strip it if it ever appears in a transcript or a status field.
+| Field | What it is |
+|---|---|
+| `kind` | `meeting`, `town_hall`, `broadcast` or `stream` |
+| `title` | The title |
+| `start`, `end` | `{ iso, timezone, local }`, or `null` when no time was given. `end` defaults to start plus one hour. |
+| `timezone` | The IANA zone the local times are written in |
+| `join_url` / `watch_url` | The plain link. It never contains a password. |
+| `visit_url` | Broadcasts: the Visit link painted on the picture |
+| `description` | The agenda or notes as given |
+| `admit` | How people get in: `link`, or `password` with the `room_password` guests type |
+| `roles` | Who does what: the host (with their own host password, never sent), guests or viewers, early and late viewers, and that the room is written down (📝 Transcribing) |
+| `text` | A ready-to-send invite body with all of the above |
+| `calendar` | `summary`, `description`, `location` and `url` for a calendar connector |
 
-This server does not send the email or the calendar event. The caller does, after the person approves it.
+The host password, the bot password and the seed of the host key are never in any of these.
 
 Paid one-click links that would open the room with the password already applied are not part of this release.

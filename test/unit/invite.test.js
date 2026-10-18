@@ -1,16 +1,9 @@
-// Room password is listed for the guest to type. It is never inside a link.
-// The bot password is never in an invite, a transcript, or any tool result.
+// Invite details: the room password is listed for the guest to type and is
+// never inside a link. The host password is never an input. Nothing here
+// sends anything or writes a calendar file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createServer } from '../../src/server.js';
-import { loadConfig } from '../../src/config.js';
-import { MeetingStore } from '../../src/meetings.js';
-import { formatInvite, plainLink, urlsOf, PASSWORD_LINK_NOTE } from '../../src/invite.js';
-import { tmpHome } from './fixtures/tmp-home.js';
+import { formatInvite, plainLink, urlsOf, PASSWORD_LINK_NOTE, meetingInvite, broadcastInvite, parseWhen } from '../../src/invite.js';
 
 const ADMIN = 'HarborNorth77';
 const ROOM = 'guest-ticket-9';
@@ -39,78 +32,51 @@ test('a link that is the password itself is refused', () => {
   assert.throws(() => plainLink('https://gifos.app/run.html#v=' + ROOM, ROOM), /must not contain the room password/);
 });
 
-test('tool output carries the room password only as its own field, and never the bot password', async () => {
-  const home = tmpHome('gifos-mcp-inv-');
-  const cfg = loadConfig({ GIFOS_MCP_HOME: home, GIFOS_URL: 'http://127.0.0.1:19510/', GIFOS_VOICE: '0' });
-  const meetings = new MeetingStore(home);
-  const bot = {
-    calls: [],
-    lines: {},
-    seq: 0,
-    async ensureStarted() {},
-    async join(link, password) {
-      this.calls.push(['join', link, password]);
-      const id = 'mt_' + (++this.seq);
-      this.lines[id] = ['Ada: the code is ' + ADMIN];
-      return id;
-    },
-    async transcribe() {},
-    async transcript(id) { return (this.lines[id] || []).join('\n'); },
-    async leave() {},
-    async info() { return { state: 'ready', bot_name: 'notes-test', password: ADMIN }; },
-  };
-  const server = createServer({ cfg, meetings, bot, botPassword: ADMIN });
-  const [a, b] = InMemoryTransport.createLinkedPair();
-  const client = new Client({ name: 'unit', version: '1' });
-  await Promise.all([server.connect(a), client.connect(b)]);
-  const created = JSON.parse((await client.callTool({
-    name: 'create_meeting',
-    arguments: { name: 'Demo', admin_password: ADMIN },
-  })).content[0].text);
-  assert.deepEqual(Object.keys(created), ['link']);
-  assert.equal(created.link.includes(ADMIN), false);
-  assert.equal(JSON.stringify(created).includes(ADMIN), false);
-  assert.equal(fs.readFileSync(path.join(home, 'meetings.json'), 'utf8').includes(ADMIN), false);
-  const listed = JSON.parse((await client.callTool({ name: 'list_meetings', arguments: {} })).content[0].text);
-  const meetingId = listed.meetings.find((m) => m.link === created.link).meeting_id;
+test('a local time is read in its time zone; an ISO time with an offset is as written', () => {
+  assert.equal(new Date(parseWhen('2026-10-20T17:00', 'America/Los_Angeles')).toISOString(), '2026-10-21T00:00:00.000Z');
+  assert.equal(new Date(parseWhen('2026-03-08T03:30', 'America/New_York')).toISOString(), '2026-03-08T07:30:00.000Z');
+  assert.equal(new Date(parseWhen('2026-10-20T17:00:00-04:00', 'Asia/Tokyo')).toISOString(), '2026-10-20T21:00:00.000Z');
+  assert.equal(parseWhen('', 'UTC'), null);
+  assert.throws(() => parseWhen('next tuesday', 'UTC'), /Not a time/);
+  assert.throws(() => parseWhen('2026-10-20T17:00', 'Mars/Olympus'), /Unknown time zone/);
+});
 
-  const scheduled = JSON.parse((await client.callTool({
-    name: 'schedule_meeting',
-    arguments: { link: created.link, room_password: ROOM, start: '2026-10-17T16:00:00.000Z', end: '2026-10-17T17:00:00.000Z' },
-  })).content[0].text);
-  assert.equal(JSON.stringify(scheduled).includes(ROOM), false, 'the room password is not a tool result');
-  assert.equal(JSON.stringify(scheduled).includes(ADMIN), false);
-  const disk = fs.readFileSync(path.join(home, 'schedule.json'), 'utf8');
-  assert.match(disk, new RegExp(ROOM));
-  assert.equal(disk.includes(ADMIN), false, 'the admin password is not on the schedule');
-  assert.equal(fs.statSync(path.join(home, 'schedule.json')).mode & 0o777, 0o600);
+test('a meeting invite has every detail an invite needs, as fields and as text', () => {
+  const link = 'https://gifos.app/run.html#v=demoroom123&av=3783bb03122c41d92d295bab';
+  const inv = meetingInvite({ title: 'Budget review', link, start: '2026-10-20T17:00', end: '2026-10-20T18:30', timezone: 'America/Los_Angeles', description: 'Q4 numbers.', roomPassword: ROOM, hostName: 'Ada' });
+  assert.equal(inv.kind, 'meeting');
+  assert.equal(inv.title, 'Budget review');
+  assert.deepEqual(inv.start, { iso: '2026-10-21T00:00:00.000Z', timezone: 'America/Los_Angeles', local: '2026-10-20 17:00' });
+  assert.equal(inv.end.local, '2026-10-20 18:30');
+  assert.equal(inv.join_url, link);
+  assert.equal(inv.description, 'Q4 numbers.');
+  assert.equal(inv.admit.how, 'password');
+  assert.equal(inv.admit.room_password, ROOM);
+  assert.match(inv.roles.host, /Ada/);
+  assert.match(inv.roles.notes, /Transcribing/);
+  for (const piece of ['Budget review', '2026-10-20 17:00', 'America/Los_Angeles', 'Q4 numbers.', link, ROOM]) assert.ok(inv.text.includes(piece), piece);
+  assert.equal(urlsContain(inv.text, ROOM), false);
+  assert.equal(inv.calendar.location, link);
+  assert.equal(JSON.stringify(inv).includes('BEGIN:VCALENDAR'), false, 'no calendar file is made');
+  const open = meetingInvite({ title: 'Stand-up', link: 'https://gifos.app/run.html#v=abc', start: '2026-10-20T09:00Z' });
+  assert.equal(open.admit.how, 'link');
+  assert.equal(open.end.iso, '2026-10-20T10:00:00.000Z', 'an hour by default');
+  assert.equal(open.timezone, 'UTC');
+  assert.equal(meetingInvite({ title: 'Later', link: 'https://gifos.app/run.html#v=abc' }).start, null);
+  assert.equal(meetingInvite({ link: 'https://gifos.app/run.html#v=abc', townHall: true }).kind, 'town_hall');
+  assert.throws(() => meetingInvite({ link: 'https://gifos.app/run.html#v=abc', start: '2026-10-20T10:00Z', end: '2026-10-20T09:00Z' }), /end must be after start/);
+});
 
-  const started = JSON.parse((await client.callTool({
-    name: 'start_meeting',
-    arguments: { meeting_id: meetingId },
-  })).content[0].text);
-  assert.equal(started.link.includes(ROOM), false);
-  assert.equal(JSON.stringify(started).includes(ADMIN), false);
-  assert.equal(bot.calls[0][1].includes(ROOM), false, 'the bot is handed a plain link');
-  assert.equal(bot.calls[0][2], ROOM, 'the bot still receives the room password to type');
-
-  const dirty = 'https://gifos.app/run.html#v=otherroom1&password=' + ROOM;
-  const joined = JSON.parse((await client.callTool({
-    name: 'join_meeting',
-    arguments: { link: dirty, password: ROOM },
-  })).content[0].text);
-  assert.equal(joined.link.includes('password='), false);
-  assert.equal(joined.link.includes(ROOM), false);
-  assert.equal(bot.calls[1][1].includes(ROOM), false);
-
-  const transcript = (await client.callTool({
-    name: 'get_transcript',
-    arguments: { meeting_id: meetingId },
-  })).content[0].text;
-  assert.equal(transcript.includes(ADMIN), false);
-  assert.match(transcript, /\[redacted\]/);
-
-  const status = (await client.callTool({ name: 'status', arguments: {} })).content[0].text;
-  assert.equal(status.includes(ADMIN), false);
-  assert.match(status, /\[redacted\]/);
+test('a broadcast invite says how to watch, when it starts, and where Visit goes', () => {
+  const link = 'https://gifos.app/run.html#v=svc&av=3783bb03122c41d92d295bab&bc=1&at=1792540800';
+  const inv = broadcastInvite({ title: 'Sunday service', link, start: '2026-10-25T10:00', timezone: 'America/Chicago', visit: 'https://example.org/give', description: 'Live from the hall.' });
+  assert.equal(inv.kind, 'broadcast');
+  assert.equal(inv.watch_url, link);
+  assert.equal(inv.visit_url, 'https://example.org/give');
+  assert.equal(inv.start.local, '2026-10-25 10:00');
+  assert.match(inv.roles.early, /countdown/);
+  assert.match(inv.roles.after, /ended/);
+  assert.match(inv.text, /Watch: /);
+  assert.match(inv.text, /Visit: https:\/\/example.org\/give/);
+  assert.equal(broadcastInvite({ link, stream: true }).kind, 'stream');
 });

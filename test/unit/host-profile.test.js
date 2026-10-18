@@ -30,7 +30,7 @@ function brokerAI(sandbox, op, payload) {
   });
 }
 
-test('a fresh profile speaks through the host tts and smartest providers', async () => {
+test('a fresh profile speaks through the host tts provider, and the host serves no text model', async () => {
   const stored = {};
   let pageFetched = false;
   const sandbox = {
@@ -59,14 +59,10 @@ test('a fresh profile speaks through the host tts and smartest providers', async
       const wav = Buffer.from('RIFF....WAVE');
       return JSON.stringify({ role: 'tts', mime: 'audio/wav', audio: wav.toString('base64'), text: '' });
     }
-    if (role === 'smartest') {
-      assert.equal(req.messages[0].content, 'What did we decide?');
-      return JSON.stringify({ role: 'smartest', text: 'Ship the notes.', mime: '' });
-    }
     return Promise.reject(new Error('unexpected role ' + role));
   };
   vm.createContext(sandbox);
-  vm.runInContext(bridgeScript({ hostRoles: ['tts', 'smartest'] }), sandbox);
+  vm.runInContext(bridgeScript({ hostRoles: ['tts', 'smartest'] }), sandbox); // smartest is asked for and refused
 
   const audio = await brokerAI(sandbox, 'tts', { text: 'Hello from the room', voice: 'af_heart' });
   assert.equal(audio.ok, true);
@@ -74,9 +70,8 @@ test('a fresh profile speaks through the host tts and smartest providers', async
   assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
   assert.equal(pageFetched, false);
 
-  const chat = await brokerAI(sandbox, 'chat', { messages: [{ role: 'user', content: 'What did we decide?' }] });
-  const body = await chat.json();
-  assert.equal(body.choices[0].message.content, 'Ship the notes.');
+  // No text model: a chat request is not configured on this profile.
+  assert.throws(() => brokerAI(sandbox, 'chat', { messages: [{ role: 'user', content: 'What did we decide?' }] }), /NOT_CONFIGURED:ai:smartest/);
   assert.equal(pageFetched, false);
   assert.equal(JSON.stringify(stored).includes(KEY), false);
 });

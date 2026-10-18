@@ -1,11 +1,10 @@
-// GifOS Settings → AI models is where LLM, speech-to-text, and text-to-speech
-// live. Meet Bot's setVoice must name those providers and must not carry a
-// raw URL or a key. No browser.
+// GifOS Settings → AI models is where speech-to-text and text-to-speech
+// live. This process answers tts (Kokoro) and, with a stand-in, stt. It
+// serves no text model and reads no model key. No browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { loadConfig } from '../../src/config.js';
-import { voiceSettings } from '../../src/voice/settings.js';
 import { bridgeScript, expandForHost, fetchPlan, hostRoles, installPlan } from '../../src/voice/providers.js';
 import { packHostResult, serveHost } from '../../src/voice/host.js';
 
@@ -26,7 +25,7 @@ test('a fresh profile keeps Kokoro in this process and installs speech-to-text f
   assert.equal(installPlan(named).find((s) => s.role === 'tts').appId, 'tts-synthetic');
 });
 
-test('an HTTP stand-in is served by this process and is not written into Settings', () => {
+test('an HTTP stand-in is served by this process and is not written into Settings; model settings are ignored', () => {
   const cfg = loadConfig({
     GIFOS_MCP_HOME: '/x',
     GIFOS_TTS_URL: 'http://127.0.0.1:9/voice',
@@ -36,28 +35,16 @@ test('an HTTP stand-in is served by this process and is not written into Setting
     GIFOS_LLM_KEY: KEY,
     GIFOS_STT_APP: 'none',
   });
-  assert.deepEqual(hostRoles(cfg), ['tts', 'smartest', 'stt']);
+  assert.deepEqual(hostRoles(cfg), ['tts', 'stt']);
   const steps = installPlan(cfg);
   assert.deepEqual(steps, []);
-  assert.equal(JSON.stringify(steps).includes(KEY), false);
-  assert.equal(steps.some((s) => s.appId === 'offline-tts-kokoro'), false);
-  const handed = voiceSettings(cfg.voice);
-  assert.equal(handed.llm.provider, 'smartest');
-  assert.equal('url' in handed.llm, false);
-  assert.equal('key' in handed.llm, false);
-  assert.equal(handed.tts.provider, 'tts');
-  assert.equal(handed.tts.engine, 'http');
-  assert.equal('url' in handed.tts, false);
-  assert.equal(handed.stt.provider, 'stt');
-  assert.equal(JSON.stringify(handed).includes(KEY), false);
-  assert.equal(JSON.stringify(handed).includes('127.0.0.1'), false);
-  const expanded = expandForHost(handed, {
-    smartest: { url: cfg.voice.url, key: KEY, model: 'local-model' },
+  assert.equal(JSON.stringify(cfg).includes(KEY), false);
+  const expanded = expandForHost({ llm: { provider: 'smartest' }, tts: { provider: 'tts', engine: 'http' }, stt: { provider: 'stt' } }, {
+    smartest: { url: 'http://127.0.0.1:10/v1', key: KEY, model: 'local-model' },
     tts: { url: cfg.voice.tts.url, voice: 'af_heart' },
     stt: { url: cfg.voice.sttUrl },
   }, hostRoles(cfg));
-  assert.equal(expanded.llm.url, 'gifos-provider://smartest');
-  assert.equal('key' in expanded.llm, false);
+  assert.equal('llm' in expanded, false);
   assert.equal(expanded.tts.engine, 'kokoro');
   assert.equal('url' in expanded.tts, false);
   assert.equal(JSON.stringify(expanded).includes(KEY), false);
@@ -73,15 +60,12 @@ function tinyWav() {
   return hdr;
 }
 
-test('the host answers speech, captions, and the model, and a failure does not echo the key', async () => {
+test('the host answers speech and captions, refuses a text model, and a failure does not echo a secret', async () => {
   const wav = tinyWav();
   const seen = [];
   const fetchImpl = async (url, init) => {
     seen.push({ url: String(url), init });
     const u = String(url);
-    if (u.endsWith('/chat/completions')) {
-      return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
-    }
     if (u.includes('captions')) {
       return { ok: true, status: 200, headers: { get: () => 'text/plain' }, text: async () => 'caption' };
     }
@@ -96,23 +80,30 @@ test('the host answers speech, captions, and the model, and a failure does not e
   assert.equal(speech.role, 'tts');
   assert.equal(speech.mime, 'audio/wav');
   assert.equal(Buffer.from(speech.bytes).toString('ascii', 0, 4), 'RIFF');
-  const chat = await serveHost({ llm: { url: 'https://api.example.test/v1/', key: KEY, model: 'm' } }, 'smartest', { messages: [{ role: 'user', content: 'hi' }] }, fetchImpl);
-  assert.equal(chat.text, 'ok');
-  const posted = seen.find((s) => s.url.endsWith('/chat/completions'));
-  assert.equal(posted.init.headers.authorization, 'Bearer ' + KEY);
-  assert.equal(posted.init.body.includes('"stream":false'), true);
-  assert.equal(packHostResult(chat).includes(KEY), false);
+  const model = await serveHost({ llm: { url: 'https://api.example.test/v1/', key: KEY, model: 'm' } }, 'smartest', { messages: [{ role: 'user', content: 'hi' }] }, fetchImpl).then(() => null, (e) => e);
+  assert.match(model.message, /does not serve smartest/);
+  assert.equal(seen.length, 1, 'nothing was fetched for the model');
   const captions = await serveHost({ stt: { url: 'http://127.0.0.1:11/captions' } }, 'stt', { audio: Buffer.from('abc').toString('base64'), mime: 'audio/wav' }, fetchImpl);
   assert.equal(captions.text, 'caption');
   assert.equal(Buffer.from(seen.find((s) => s.url.includes('captions')).init.body).toString(), 'abc');
   const failed = await serveHost(
-    { llm: { url: 'https://api.example.test/v1', key: KEY, model: 'm' } },
-    'smartest',
-    {},
+    { stt: { url: 'http://127.0.0.1:11/captions' } },
+    'stt',
+    { audio: '' },
     async () => ({ ok: false, status: 401, text: async () => KEY, json: async () => ({ error: KEY }) }),
   ).then(() => null, (e) => e);
   assert.match(failed.message, /failed \(401\)/);
   assert.equal(failed.message.includes(KEY), false);
+  assert.equal(packHostResult(captions).includes(KEY), false);
+});
+
+// A per-line voice (say with voice) reaches the speech engine for that line.
+test('a voice asked for one line is the voice Kokoro speaks it in', async () => {
+  const spoke = [];
+  const kokoro = { voice: 'af_heart', hasVoice: (n) => n === 'af_heart' || n === 'am_michael', async speak(text, voice) { spoke.push(voice); return tinyWav(); } };
+  await serveHost({ kokoro, lineVoice: () => 'am_michael' }, 'tts', { text: 'Hi', voice: 'af_heart' });
+  await serveHost({ kokoro, lineVoice: () => '' }, 'tts', { text: 'Hi', voice: 'af_heart' });
+  assert.deepEqual(spoke, ['am_michael', 'af_heart']);
 });
 
 test('https pages do not call an http model directly', () => {
@@ -139,8 +130,7 @@ test('the host bridge reads Settings and does not put the key in the app', () =>
     tts: { provider: 'tts', engine: 'kokoro', app: 'tts-synthetic', voice: 'af_heart' },
     stt: { provider: 'stt' },
   }, ai);
-  assert.equal(expanded.llm.url, 'gifos-provider://smartest');
-  assert.equal('key' in expanded.llm, false);
+  assert.equal('llm' in expanded, false);
   assert.equal(expanded.tts.engine, 'kokoro');
   assert.equal('url' in (expanded.stt || {}), false);
 
@@ -166,7 +156,7 @@ test('the host bridge reads Settings and does not put the key in the app', () =>
   const eng = sandbox.HostVoice.create({ fetch: sandbox.fetch, tts() { throw new Error('raw tts'); } });
   const pub = eng.setVoice({ conversation_voice: 'local', llm: { provider: 'smartest' }, tts: { provider: 'tts', engine: 'kokoro', voice: 'af_heart' }, stt: { provider: 'stt' } });
   assert.equal(pub.conversation_voice, 'local');
-  assert.equal(seen[0].llm.url, 'gifos-provider://smartest');
+  assert.equal('llm' in seen[0], false);
   assert.equal(JSON.stringify(seen).includes(KEY), false);
   return eng.opts.fetch('gifos-provider://smartest/extra', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }) }).then((res) => {
     assert.equal(res.ok, true);

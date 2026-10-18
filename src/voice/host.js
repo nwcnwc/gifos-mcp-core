@@ -1,16 +1,11 @@
-// Host-layer provider. gifos-mcp embeds the headless GifOS page, so it
-// answers tts, stt, and smartest itself. The page calls one Playwright
-// binding. It does not fetch, and no sandboxed provider GIF is mounted.
-// The key stays in this process.
+// Host-layer provider. This process embeds the headless GifOS page, so it
+// answers tts (and stt, when a stand-in URL is set) itself. The page calls
+// one Playwright binding. It does not fetch, and no sandboxed provider GIF
+// is mounted. There is no text model here: the assistant calling the MCP
+// tools writes every word the bot says.
 import { speakAsTts } from './providers.js';
 import { nativeVoice } from './voices.js';
 import { heardText } from './hallucination.js';
-
-const CHAT_PATH = '/chat/' + 'completions';
-
-function trimBase(url) {
-  return String(url || '').replace(/\/+$/, '');
-}
 
 async function readError(res) {
   const status = res && res.status ? res.status : 0;
@@ -27,11 +22,12 @@ async function serveHostOnce(services, role, req, fetchImpl) {
   const s = services || {};
   const fetchFn = fetchImpl || fetch;
   if (role === 'tts') {
+    const asked = typeof s.lineVoice === 'function' ? s.lineVoice() : '';
+    if (asked) req = { ...(req || {}), voice: asked };
     if (s.kokoro) return speakAsTts(s.kokoro, req);
     if (s.tts && s.tts.url) return fetchSpeech(s.tts, req, fetchFn);
     throw new Error('Kokoro is not available on this computer.');
   }
-  if (role === 'smartest') return fetchChat(s.llm, req, fetchFn);
   if (role === 'stt') return fetchCaptions(s.stt, req, fetchFn);
   throw new Error('The host does not serve ' + role + '.');
 }
@@ -50,26 +46,6 @@ async function fetchSpeech(tts, req, fetchFn) {
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF') throw new Error('The speech stand-in did not return a WAV.');
   return { role: 'tts', mime: 'audio/wav', bytes: buf, voice };
-}
-
-async function fetchChat(llm, req, fetchFn) {
-  if (!llm || !llm.url || !llm.model) throw new Error('Local voice needs a model URL and a model name.');
-  const headers = { 'content-type': 'application/json' };
-  if (llm.key) headers.authorization = 'Bearer ' + llm.key;
-  const res = await fetchFn(trimBase(llm.url) + CHAT_PATH, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model: llm.model,
-      messages: (req && req.messages) || [],
-      stream: false,
-    }),
-  });
-  if (!res.ok) throw await readError(res);
-  const data = await res.json();
-  const choice = data && data.choices && data.choices[0];
-  const text = (choice && choice.message && choice.message.content) || (choice && choice.text) || '';
-  return { role: 'smartest', text: String(text) };
 }
 
 function audioBytes(req) {

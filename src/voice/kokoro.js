@@ -1,16 +1,56 @@
-// Kokoro runs in this process, on the machine that runs gifos-mcp.
-// The first call downloads the weights and the af_heart voice into
-// GIFOS_MCP_HOME/kokoro. Nothing here is a provider GIF, and nothing
+// Kokoro runs in this process, on the machine that runs the MCP server.
+// The first call downloads the pinned weights (KOKORO_REVISION, checked
+// against KOKORO_FILES) into GIFOS_MCP_HOME/kokoro; the af_heart voice
+// ships inside the kokoro-js package. Nothing here is a provider GIF, and nothing
 // listens on the network. The headless harness turns speak() into the
-// bytes for the tts role. See docs/MEETBOT-BRIDGE.md.
+// bytes for the tts role.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { MCP_TTS_APP, KOKORO_VOICE } from './settings.js';
 import { nativeVoice } from './voices.js';
 import { log } from '../log.js';
 
 export const KOKORO_MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 export const KOKORO_DTYPE = 'q8';
+// The weights are fetched from this commit of the model repository, never
+// from a moving branch, and every file is checked against its SHA-256
+// before it is used. About 92 MB in all. The voices ship inside the
+// kokoro-js package itself.
+export const KOKORO_REVISION = '1939ad2a8e416c0acfeecc08a694d14ef25f2231';
+export const KOKORO_FILES = Object.freeze({
+  'config.json': 'df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f',
+  'tokenizer.json': '77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34',
+  'tokenizer_config.json': 'be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20',
+  'onnx/model_quantized.onnx': 'fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478',
+});
+
+// The SHA-256 a weights file must have, by its path inside the model.
+export function expectedHash(relPath) {
+  return KOKORO_FILES[String(relPath).split(path.sep).join('/')] || null;
+}
+
+async function sha256File(file) {
+  const hash = crypto.createHash('sha256');
+  await new Promise((resolve, reject) => {
+    fs.createReadStream(file).on('data', (b) => hash.update(b)).on('end', resolve).on('error', reject);
+  });
+  return hash.digest('hex');
+}
+
+// A file that is not the pinned one is removed, never loaded.
+const checked = new Set();
+async function verifyFile(file, rel, hashes = KOKORO_FILES) {
+  const want = hashes[String(rel).split(path.sep).join('/')] || null;
+  if (!want) throw new Error('Kokoro: ' + rel + ' is not one of the pinned weights files.');
+  if (checked.has(file)) return;
+  const got = await sha256File(file);
+  if (got !== want) {
+    await fs.promises.rm(file, { force: true });
+    throw new Error('Kokoro: ' + rel + ' does not match its pinned SHA-256 (got ' + got.slice(0, 12) + '…); it was removed.');
+  }
+  checked.add(file);
+}
 
 const loads = new Map();
 
@@ -44,30 +84,34 @@ export function installKokoro({ home, voice, host } = {}) {
 // starting from zero. The part keeps the ETag its bytes came with in
 // <part>.tag; a part with no strong ETag, or whose file has a different
 // ETag now, is dropped rather than joined to bytes of another version.
-export function weightsCache(dir, host) {
+// hashes: path in the model -> SHA-256 (the pinned KOKORO_FILES unless a
+// test hands its own stand-in files).
+export function weightsCache(dir, host, hashes = KOKORO_FILES) {
   const base = String(host).replace(/\/+$/, '') + '/';
-  const fileFor = (key) => {
+  const where = (key) => {
     const k = String(key);
     if (!k.startsWith(base)) return null;
-    const m = /^([^/]+\/[^/]+)\/resolve\/main\/(.+)$/.exec(decodeURIComponent(k.slice(base.length)));
+    const m = /^([^/]+\/[^/]+)\/resolve\/[^/]+\/(.+)$/.exec(decodeURIComponent(k.slice(base.length)));
     if (!m) return null;
     const file = path.resolve(dir, m[1], m[2]);
-    return file.startsWith(path.resolve(dir) + path.sep) ? file : null;
+    return file.startsWith(path.resolve(dir) + path.sep) ? { file, rel: m[2] } : null;
   };
   return {
     async match(key) {
-      const file = fileFor(key);
-      if (!file) return undefined;
-      if (!fs.existsSync(file) && !(await resume(key, file))) return undefined;
-      const bytes = await fs.promises.readFile(file);
+      const at = where(key);
+      if (!at) return undefined;
+      if (!fs.existsSync(at.file) && !(await resume(key, at.file))) return undefined;
+      await verifyFile(at.file, at.rel, hashes);
+      const bytes = await fs.promises.readFile(at.file);
       return new Response(bytes, { headers: { 'content-length': String(bytes.length) } });
     },
     async put(key, response, progress) {
-      const file = fileFor(key);
-      if (!file) return;
-      await fs.promises.mkdir(path.dirname(file), { recursive: true });
+      const at = where(key);
+      if (!at) return;
+      await fs.promises.mkdir(path.dirname(at.file), { recursive: true });
       const total = parseInt(response.headers.get('content-length') || '0', 10);
-      await writePart(file, response, 0, total, progress);
+      await writePart(at.file, response, 0, total, progress);
+      await verifyFile(at.file, at.rel, hashes);
     },
   };
 }
@@ -216,6 +260,7 @@ async function load(dir, voice, host) {
   const transformers = await import('@huggingface/transformers');
   transformers.env.cacheDir = dir;
   transformers.env.remoteHost = String(host).replace(/\/+$/, '') + '/';
+  transformers.env.remotePathTemplate = '{model}/resolve/' + KOKORO_REVISION + '/';
   transformers.env.useCustomCache = true;
   transformers.env.customCache = weightsCache(dir, host);
   const { KokoroTTS } = await importKokoro();

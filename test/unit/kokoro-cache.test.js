@@ -9,12 +9,12 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { weightsCache } from '../../src/voice/kokoro.js';
+import { weightsCache, KOKORO_REVISION } from '../../src/voice/kokoro.js';
 import { tmpHome } from './fixtures/tmp-home.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CHILD = path.join(HERE, 'fixtures', 'kokoro-child.js');
-const BIN = path.join(HERE, '..', '..', 'bin', 'gifos-mcp.js');
+const BIN = path.join(HERE, 'fixtures', 'server-bin.js');
 const REPO = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 const MODEL = 'onnx/model_quantized.onnx';
 const CONFIG = JSON.stringify({ model_type: 'style_text_to_speech_2' });
@@ -25,13 +25,19 @@ const CONFIG = JSON.stringify({ model_type: 'style_text_to_speech_2' });
 // If-Range headers. Like the Hugging Face CDN, every answer carries a strong
 // ETag (the sha256 of the bytes, or `etag`; null sends none) and If-Range
 // is ignored.
+const shaOf = (b) => crypto.createHash('sha256').update(b).digest('hex');
+// The stand-in files are not the real weights: tests that read them through
+// the cache name their own hashes.
+const pinned = (b) => ({ [MODEL]: shaOf(b) });
 const tagOf = (b) => '"' + crypto.createHash('sha256').update(b).digest('hex') + '"';
 async function weightsServer(t, files, { etag } = {}) {
   const asked = [];
   const ranges = [];
+  const paths = [];
   const server = http.createServer((req, res) => {
-    const prefix = '/' + REPO + '/resolve/main/';
-    const name = req.url.startsWith(prefix) ? decodeURIComponent(req.url.slice(prefix.length)) : req.url;
+    paths.push(req.url);
+    const m = new RegExp('^/' + REPO.replace('/', '\\/') + '/resolve/[^/]+/(.+)$').exec(req.url);
+    const name = m ? decodeURIComponent(m[1]) : req.url;
     asked.push(name);
     ranges.push({ name, range: req.headers.range || null, ifRange: req.headers['if-range'] || null });
     const f = files[name];
@@ -55,7 +61,7 @@ async function weightsServer(t, files, { etag } = {}) {
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(() => { server.closeAllConnections(); server.close(); });
-  return { host: 'http://127.0.0.1:' + server.address().port, asked, ranges };
+  return { host: 'http://127.0.0.1:' + server.address().port, asked, ranges, paths };
 }
 
 function freshHome(t) {
@@ -114,7 +120,7 @@ test('a download killed halfway leaves no model file that the next start would t
     'only a finished download may sit at the model path; found ' + JSON.stringify(filesUnder(modelDir(home)).map((p) => path.relative(home, p) + ' ' + sizeOf(p))));
 });
 
-test('a model file that will not load is fetched again once, then the error is plain', async (t) => {
+test('a model file that is not the pinned one is never loaded: it is fetched again, at most twice, then the error is plain', async (t) => {
   const home = freshHome(t);
   // A half file from an older run that wrote straight to the model path.
   fs.mkdirSync(path.join(modelDir(home), 'onnx'), { recursive: true });
@@ -128,11 +134,23 @@ test('a model file that will not load is fetched again once, then the error is p
   t.after(() => child.proc.kill('SIGKILL'));
   const out = await Promise.race([child.done, new Promise((r) => setTimeout(() => r(null), 60000).unref())]);
   assert.ok(out, 'installKokoro settles; stderr: ' + child.stderr.slice(-2000));
-  assert.equal(w.asked.filter((n) => n === MODEL).length, 1, 'the bad model is downloaded again once; asked ' + JSON.stringify(w.asked));
+  const asked = w.asked.filter((n) => n === MODEL).length;
+  assert.ok(asked >= 1 && asked <= 2, 'the bad model is downloaded again, once per try; asked ' + JSON.stringify(w.asked));
   assert.equal(out.code, 1, 'the load fails as a rejection, not a crash; stderr: ' + out.stderr.slice(-2000));
   const line = JSON.parse(out.stdout.trim().split('\n').pop());
   assert.equal(line.ok, false);
   assert.match(line.error, /Kokoro/);
+  assert.equal(fs.existsSync(path.join(modelDir(home), MODEL)), false, 'a file that is not the pinned one is removed');
+});
+
+test('weights are asked for at the pinned revision, never a moving branch', async (t) => {
+  const home = freshHome(t);
+  const w = await weightsServer(t, { 'config.json': Buffer.from(CONFIG), [MODEL]: Buffer.alloc(64, 1) });
+  const child = run(CHILD, [home, w.host]);
+  t.after(() => child.proc.kill('SIGKILL'));
+  await Promise.race([child.done, new Promise((r) => setTimeout(r, 60000).unref())]);
+  assert.ok(w.paths.length > 0, 'the stand-in was asked');
+  for (const p of w.paths) assert.match(p, new RegExp('/resolve/' + KOKORO_REVISION + '/'), p);
 });
 
 test('the binary exits 1 with one Kokoro line when the weights will not load', async (t) => {
@@ -197,7 +215,7 @@ test('a resumed download puts the kept bytes and the rest together in order', as
   const w = await weightsServer(t, { [MODEL]: whole });
   const dir = path.join(home, 'kokoro');
   const file = path.join(dir, REPO, MODEL);
-  const cache = weightsCache(dir, w.host);
+  const cache = weightsCache(dir, w.host, pinned(whole));
   const res = await cache.match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
   assert.ok(res, 'the kept part is finished and answered from the cache');
   assert.ok(Buffer.from(await res.arrayBuffer()).equals(whole), 'the answer is the whole file');
@@ -216,7 +234,7 @@ test('a server that ignores Range gives the whole file, not the kept bytes twice
   const host = 'http://127.0.0.1:' + server.address().port;
   const dir = path.join(home, 'kokoro');
   const file = path.join(dir, REPO, MODEL);
-  const res = await weightsCache(dir, host).match(host + '/' + REPO + '/resolve/main/' + MODEL);
+  const res = await weightsCache(dir, host, pinned(whole)).match(host + '/' + REPO + '/resolve/main/' + MODEL);
   assert.ok(res);
   assert.ok(fs.readFileSync(file).equals(whole), 'the file on disk is the whole file');
 });
@@ -244,7 +262,7 @@ test('a part of an older version of the model is not joined to the new one', asy
   const w = await weightsServer(t, { [MODEL]: v2 });
   const dir = path.join(home, 'kokoro');
   const file = path.join(dir, REPO, MODEL);
-  const res = await weightsCache(dir, w.host).match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
+  const res = await weightsCache(dir, w.host, pinned(v2)).match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
   if (res) assert.ok(Buffer.from(await res.arrayBuffer()).equals(v2), 'an answer from the cache is the new file, not old bytes + new bytes');
   if (fs.existsSync(file)) assert.ok(fs.readFileSync(file).equals(v2), 'the file on disk is the new file, not old bytes + new bytes');
   assert.deepEqual(filesUnder(path.dirname(file)).filter((p) => p.endsWith('.part')), [], 'the old part is dropped');
@@ -256,7 +274,7 @@ test('a resume tells the server which version its kept bytes are from', async (t
   await killedPart(t, home, whole, 200000);
   const w = await weightsServer(t, { [MODEL]: whole });
   const dir = path.join(home, 'kokoro');
-  const res = await weightsCache(dir, w.host).match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
+  const res = await weightsCache(dir, w.host, pinned(whole)).match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
   assert.ok(res && Buffer.from(await res.arrayBuffer()).equals(whole), 'the same version is resumed into the whole file');
   const ask = w.ranges.find((r) => r.name === MODEL);
   assert.ok(ask && /^bytes=\d+-$/.test(ask.range), 'the model is asked for from the kept bytes on; asked ' + JSON.stringify(w.ranges));

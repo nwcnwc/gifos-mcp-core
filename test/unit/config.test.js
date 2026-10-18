@@ -2,8 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadConfig, botCredentials, credentialProblem, generateCredentials, DEFAULT_GIFOS_URL, voiceConfig, SUGGESTED_LLM_URL, SUGGESTED_LLM_MODEL } from '../../src/config.js';
-import { voicePublic, voiceSettings } from '../../src/voice/settings.js';
+import { loadConfig, botCredentials, credentialProblem, generateCredentials, DEFAULT_GIFOS_URL, voiceConfig } from '../../src/config.js';
 import { MeetingStore, newRoom, linkFor, roomFromLink } from '../../src/meetings.js';
 import { EventLog } from '../../src/events.js';
 import { tmpHome } from './fixtures/tmp-home.js';
@@ -22,68 +21,31 @@ test('defaults', () => {
   assert.throws(() => loadConfig({ GIFOS_URL: 'gifos.app' }), /GIFOS_URL/);
 });
 
-test('meeting voice is a Meet Bot setting, and the public view hides the endpoint', () => {
-  const off = voiceConfig({ GIFOS_MCP_HOME: '/x' });
-  assert.equal(off.conversationVoice, 'none');
-  assert.equal(off.url, '');
-  assert.equal(off.respondToCommand, true);
-  const hidden = voicePublic(off, null);
-  assert.equal(hidden.handed, false);
-  assert.equal(hidden.conversation_voice, 'none');
-  assert.equal(hidden.model, null);
-  assert.equal(JSON.stringify(hidden).includes('api.x.ai'), false);
-  const suggested = voiceConfig({ GIFOS_LLM_KEY: 'sk-test-key' });
-  assert.equal(suggested.conversationVoice, 'local');
-  assert.equal(suggested.url, SUGGESTED_LLM_URL);
-  assert.equal(suggested.model, SUGGESTED_LLM_MODEL);
-  assert.equal(suggested.key, 'sk-test-key');
-  assert.equal(voiceSettings(suggested).llm.provider, 'smartest');
-  assert.equal('key' in voiceSettings(suggested).llm, false);
-  assert.equal(JSON.stringify(voiceSettings(suggested)).includes('sk-test-key'), false);
-  assert.equal(JSON.stringify(voiceSettings(suggested)).includes('api.x.ai'), false);
-  const shown = voicePublic(suggested, { applied: true });
-  assert.equal(shown.handed, true);
-  assert.equal(shown.gap, null);
-  assert.equal(shown.model, SUGGESTED_LLM_MODEL);
-  assert.equal(JSON.stringify(shown).includes('sk-test-key'), false);
-  assert.equal(JSON.stringify(shown).includes('api.x.ai'), false);
-  const local = voiceConfig({ GIFOS_LLM_URL: 'http://127.0.0.1:9/v1/', GIFOS_LLM_MODEL: 'local-model' });
-  assert.equal(local.conversationVoice, 'local');
-  assert.equal(local.url, 'http://127.0.0.1:9/v1');
-  assert.equal(local.model, 'local-model');
-  assert.equal('ttsPath' in local, false);
-  assert.equal('pauseMs' in local, false);
-  assert.equal(voiceConfig({ GIFOS_LLM_KEY: 'sk-test-key', GIFOS_VOICE: '0' }).conversationVoice, 'none');
-  assert.equal('llm' in voiceSettings(voiceConfig({ GIFOS_LLM_KEY: 'sk-test-key', GIFOS_VOICE: '0' })), false);
-  assert.equal(voiceConfig({ GIFOS_CONVERSATION_VOICE: 'grok' }).conversationVoice, 'grok');
-  assert.equal('llm' in voiceSettings(voiceConfig({ GIFOS_CONVERSATION_VOICE: 'grok' })), false);
-  assert.equal(voiceConfig({ GIFOS_LLM_KEY: 'sk-test-key', GIFOS_RESPOND_TO_COMMAND: '0' }).respondToCommand, false);
+test('there is no text model: no model URL, key or name is read, and speech is Kokoro here', () => {
+  // Old settings are ignored, not used: the assistant calling the tools writes every line.
+  const env = { GIFOS_LLM_KEY: 'sk-test-key', GIFOS_LLM_URL: 'https://api.example.test/v1', GIFOS_LLM_MODEL: 'm', GIFOS_CONVERSATION_VOICE: 'local' };
+  const v = voiceConfig(env);
+  assert.deepEqual(Object.keys(v).sort(), ['pollMs', 'sttApp', 'sttUrl', 'tts']);
+  assert.equal(JSON.stringify(loadConfig({ GIFOS_MCP_HOME: '/x', ...env })).includes('sk-test-key'), false);
+  assert.equal(JSON.stringify(loadConfig({ GIFOS_MCP_HOME: '/x', ...env })).includes('api.example.test'), false);
+  const local = voiceConfig({});
+  assert.equal(local.pollMs, 300);
   assert.equal(local.tts.engine, 'kokoro');
   assert.equal(local.tts.source, 'mcp');
   assert.equal(local.tts.app, 'mcp-tts-kokoro');
   assert.equal(local.tts.voice, 'af_heart');
   assert.equal(local.sttUrl, '');
   const standin = voiceConfig({
-    GIFOS_LLM_URL: 'http://127.0.0.1:9/v1',
-    GIFOS_LLM_MODEL: 'local-model',
     GIFOS_TTS_URL: 'http://127.0.0.1:10/voice',
     GIFOS_STT_URL: 'http://127.0.0.1:11/captions',
     GIFOS_TTS_VOICE: 'af_heart',
   });
   assert.equal(standin.tts.engine, 'http');
   assert.equal(standin.tts.url, 'http://127.0.0.1:10/voice');
-  const shownStandin = voicePublic(standin, { applied: true });
-  assert.equal(shownStandin.tts.engine, 'http');
-  assert.equal(shownStandin.stt, 'configured');
-  assert.equal(JSON.stringify(shownStandin).includes('127.0.0.1'), false);
-  assert.equal(JSON.stringify(shownStandin).includes('sk-'), false);
-  assert.equal(voiceConfig({ GIFOS_LLM_KEY: 'sk-test-key', GIFOS_TTS_ENGINE: 'none' }).tts.engine, 'none');
-  assert.equal(voiceSettings(voiceConfig({ GIFOS_LLM_KEY: 'sk-test-key', GIFOS_TTS_ENGINE: 'none' })).tts.engine, 'none');
-  assert.equal('tts' in voiceSettings(voiceConfig({ GIFOS_LLM_KEY: 'sk-test-key', GIFOS_TTS_ENGINE: 'none', GIFOS_VOICE: '0' })), false);
+  assert.equal(standin.sttUrl, 'http://127.0.0.1:11/captions');
+  assert.equal(voiceConfig({ GIFOS_TTS_ENGINE: 'none' }).tts.engine, 'none');
   assert.throws(() => voiceConfig({ GIFOS_TTS_ENGINE: 'piper' }), /GIFOS_TTS_ENGINE/);
-  assert.throws(() => voiceConfig({ GIFOS_LLM_URL: 'not a url' }), /GIFOS_LLM_URL/);
-  assert.throws(() => voiceConfig({ GIFOS_LLM_URL: 'http://127.0.0.1:9/v1' }), /GIFOS_LLM_MODEL/);
-  assert.throws(() => voiceConfig({ GIFOS_CONVERSATION_VOICE: 'whisper' }), /GIFOS_CONVERSATION_VOICE/);
+  assert.throws(() => voiceConfig({ GIFOS_TTS_URL: 'not a url' }), /GIFOS_TTS_URL/);
 });
 
 test('credential rules match the Meeting Bot app', () => {

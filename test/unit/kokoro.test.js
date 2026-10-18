@@ -1,6 +1,6 @@
-// Install downloads Kokoro once. The host binding then answers tts with
-// that audio, and the same binding answers smartest and stt. The page
-// does not fetch, and it does not see the key.
+// Install downloads the pinned Kokoro once. The host binding then answers
+// tts with that audio, and stt through a stand-in. There is no text model:
+// a model row in the page's settings is dropped, and the page never fetches.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
@@ -47,20 +47,11 @@ test('install leads to Kokoro, captions, and the model through the host binding'
   let handed = null;
   const services = {
     kokoro: engine,
-    llm: { url: 'https://api.example.test/v1', key: KEY, model: 'local-model' },
     stt: { url: 'https://stt.example.test/captions' },
   };
   function mockFetch(url, init) {
     fetches.push({ url: String(url), init });
     const u = String(url);
-    if (u.endsWith('/chat/completions')) {
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: { get: () => 'application/json' },
-        json: async () => ({ choices: [{ message: { content: 'Round trip reply.' } }] }),
-      });
-    }
     if (u.includes('captions')) {
       return Promise.resolve({
         ok: true,
@@ -75,8 +66,9 @@ test('install leads to Kokoro, captions, and the model through the host binding'
   let pageFetched = false;
   const stored = {
     gifos_ai_config: JSON.stringify({
-      smartest: { url: 'https://api.example.test/v1', key: KEY, model: 'local-model' },
-      tts: { url: 'http://127.0.0.1:9/voice' },
+      // What an earlier version left: a host row for the model, no key.
+      smartest: { url: 'gifos-provider://smartest', model: 'provider' },
+      tts: { url: 'http://127.0.0.1:9/voice', key: KEY },
       stt: { url: 'https://stt.example.test/captions' },
     }),
   };
@@ -105,7 +97,7 @@ test('install leads to Kokoro, captions, and the model through the host binding'
     },
   };
   vm.createContext(sandbox);
-  const script = bridgeScript({ hostRoles: ['tts', 'smartest', 'stt'] });
+  const script = bridgeScript({ hostRoles: ['tts', 'smartest', 'stt'] }); // smartest is refused
   assert.equal(script.includes('__gifosMcpSpeak'), false);
   assert.equal(script.includes(KEY), false);
   vm.runInContext(script, sandbox);
@@ -116,7 +108,7 @@ test('install leads to Kokoro, captions, and the model through the host binding'
   assert.equal(assigned.name, 'gifos-mcp');
   assert.equal(assigned.appId, undefined);
   assert.equal(assigned.fileId, undefined);
-  assert.equal(sandbox.GifOS.providers.assigned('smartest').host, true);
+  assert.equal((sandbox.GifOS.providers.assigned('smartest') || {}).host, undefined, 'no text model is hosted');
   assert.equal(sandbox.GifOS.providers.assigned('stt').host, true);
 
   const audio = await sandbox.GifOS.providers.call('tts', { text: LINE, voice: 'af_heart' });
@@ -147,21 +139,11 @@ test('install leads to Kokoro, captions, and the model through the host binding'
     tts: { provider: 'tts', engine: 'http', url: 'http://127.0.0.1:9/voice', voice: 'af_heart' },
     stt: { provider: 'stt', url: 'https://stt.example.test/captions' },
   });
-  assert.equal(seen[0].llm.url, 'gifos-provider://smartest');
-  assert.equal('key' in seen[0].llm, false);
+  assert.equal('llm' in seen[0], false, 'a model row is dropped, key and all');
   assert.equal(seen[0].tts.engine, 'kokoro');
   assert.equal('url' in seen[0].tts, false);
   assert.equal(JSON.stringify(seen).includes(KEY), false);
-  const res = await eng.opts.fetch('gifos-provider://smartest', {
-    method: 'POST',
-    body: JSON.stringify({ messages: [{ role: 'user', content: 'hello' }] }),
-  });
-  assert.equal(res.ok, true);
-  const body = await res.text();
-  assert.match(body, /Round trip reply/);
-  assert.equal(body.includes(KEY), false);
-  const chatFetch = fetches.find((f) => f.url.endsWith('/chat/completions'));
-  assert.equal(chatFetch.init.headers.authorization, 'Bearer ' + KEY);
+  assert.equal(fetches.some((f) => f.url.includes('api.example.test')), false, 'nothing reached a model');
   assert.equal(pageFetched, false);
 
   const other = await sandbox.GifOS.providers.call('cheapest', { op: 'chat' }).then(() => null, (e) => e);
