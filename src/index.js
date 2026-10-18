@@ -2,7 +2,7 @@
 export { runMain, createRuntime, ENV_HELP } from './main.js';
 export { createServer } from './server.js';
 export { createContext, GONE_RE } from './context.js';
-export { registerSharedTools, meetingId } from './tools/shared.js';
+export { registerSharedTools, meetingId, meetingIdFor } from './tools/shared.js';
 export { loadConfig, botCredentials, DEFAULT_GIFOS_URL } from './config.js';
 export { MeetingStore, publicView } from './meetings.js';
 export { newRoom, hostKey, hostSeed, verifierOfSeed, meetingLink, broadcastLink, roomFromLink, linkParams, cleanVisit } from './links.js';

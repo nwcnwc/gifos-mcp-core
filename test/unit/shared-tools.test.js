@@ -130,3 +130,17 @@ test('set_bot_profile: the operator names the bot and gives it a picture; the na
   const lines = json(await call('tail_lines', { meeting_id: m.meeting_id })).lines;
   assert.deepEqual(lines.map((l) => [l.speaker, l.kind]), [['Ada\u2019s notes', 'spoken']]);
 });
+
+test('snapshot returns the PNG as image content when the file is there', async () => {
+  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room4' }));
+  const png = path.join(home, 'shot.png');
+  fs.writeFileSync(png, tinyPng());
+  bot.snapshot = async () => ({ applied: true, png, result: { ok: true } });
+  const shot = await call('snapshot', { meeting_id: m.meeting_id });
+  const body = JSON.parse(shot.content[0].text);
+  assert.equal(body.png, png);
+  assert.equal(body.gap, null);
+  assert.equal(shot.content[1].type, 'image');
+  assert.equal(shot.content[1].mimeType, 'image/png');
+  assert.equal(Buffer.from(shot.content[1].data, 'base64').equals(tinyPng()), true);
+});

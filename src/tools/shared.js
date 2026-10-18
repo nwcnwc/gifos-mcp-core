@@ -2,6 +2,7 @@
 // chat, who is here, leaving, the join schedule, events and capacity, and
 // the live transcript resource. Each server adds its own tools next to
 // these (meetings in gifos-meet-mcp, broadcasts in gifos-broadcast-mcp).
+import fs from 'node:fs';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
@@ -12,16 +13,28 @@ import { publicOrder, capacityAt } from '../schedule.js';
 import { credentialProblem } from '../config.js';
 import { pictureFromFile, savePicture, saveName } from '../profile.js';
 
-export const meetingId = z.string().min(3).max(40).describe('The meeting_id of the room (from create_meeting, join_meeting, create_broadcast or join_broadcast).');
+// Each server names only the tools it actually has.
+export function meetingIdFor(serverName) {
+  const via = serverName === 'gifos-broadcast-mcp'
+    ? 'create_broadcast or join_broadcast'
+    : 'create_meeting or join_meeting';
+  return z.string().min(3).max(40).describe('The meeting_id of the room (from ' + via + ').');
+}
+
+export const meetingId = meetingIdFor('gifos-meet-mcp');
+
+const sinceSeq = z.number().int().min(0).optional().describe('Return lines with a seq greater than this. Omit or pass 0 to read from the start.');
+const lineKinds = z.array(z.enum(['speech', 'chat', 'spoken'])).optional().describe('Which lines to return: speech (someone in the room), chat (a chat post), spoken (a line this bot said). Omit for all three.');
 
 export function registerSharedTools(server, ctx, { name, version }) {
+  const meetingId = meetingIdFor(name);
   const {
     cfg, meetings, bot, transcript, schedule, events, clock, secret, secrets, ok, fail, emit, guarded, need, needLive,
     holdSeat, depart, stopJoin, counts, thinkingOf, ourNames, nameIn, orderView, ensureMeeting,
   } = ctx;
   server.registerTool('mute', {
     title: 'Mute the bot (stop listening)',
-    description: 'Stops the bot transcribing this meeting. The bot never sends audio, so this is the only kind of mute it has.',
+    description: 'Stops captions for this meeting. The microphone is separate: set_mic turns that on or off. This tool only stops transcription.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = needLive(meeting_id);
@@ -41,7 +54,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('share_content', {
     title: 'Share text or a link into the meeting',
-    description: 'Posts text (an agenda, a link, a summary) into the meeting chat as the bot. Screen sharing is not available: the bot has no screen or camera.',
+    description: 'Posts text into the meeting chat as the bot. Same chat channel as send_chat. It does not speak (say does that) and it does not share a screen.',
     inputSchema: {
       meeting_id: meetingId,
       text: z.string().min(1).max(2000).describe('What to post into the meeting chat (up to 2000 characters).'),
@@ -70,7 +83,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('end_meeting', {
     title: 'End the meeting for the bot',
-    description: 'Saves the transcript, then the bot leaves. Other participants can stay; GifOS meetings have no owner who can close them for everyone.',
+    description: 'The bot leaves and the transcript is saved. Same result as leave_meeting. Other participants stay; a GifOS meeting has no owner who can close it for everyone. A scheduled order still inside its window is marked left early.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = need(meeting_id);
@@ -108,10 +121,10 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('tail_transcript', {
     title: 'Tail the live transcript',
-    description: 'New lines since `since` (the seq from the previous tail, or 0). Each line is {seq, ts, speaker, text, kind}. kind is speech for someone in the room, and spoken for a line this bot said. Lines come from Meet Bot. Works while the meeting is live and after it ends. The same bytes are the gifos://meeting/{id}/transcript resource.',
+    description: 'Speech and spoken lines for one meeting, with seq greater than since. kind is speech for someone in the room, and spoken for a line this bot said. Chat is not included: tail_lines returns chat as well, can filter by kinds, and can read every meeting at once. Works while the meeting is live and after it ends. The same speech and spoken lines are the gifos://meeting/{id}/transcript resource.',
     inputSchema: {
       meeting_id: meetingId,
-      since: z.number().int().min(0).optional().describe('Return lines with a seq greater than this. Omit or pass 0 to read from the start.'),
+      since: sinceSeq,
     },
   }, guarded(async ({ meeting_id, since }) => {
     need(meeting_id);
@@ -120,7 +133,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('say', {
     title: 'Speak in the room',
-    description: 'Meet Bot says this line out loud in the room now (MeetingBot.interject), interrupting any line it is still saying. The words are yours: Meet Bot answers nothing on its own. The audio is made on this computer by Kokoro. share_content and send_chat are chat, not speech.',
+    description: 'Meeting Bot says this line out loud in the room now, interrupting any line it is still saying. The words are yours: Meeting Bot answers nothing on its own. The audio is made on this computer by Kokoro. share_content and send_chat are chat, not speech.',
     inputSchema: {
       meeting_id: meetingId,
       text: z.string().min(1).max(2000).describe('What to say, in one or two sentences.'),
@@ -177,7 +190,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       meeting_id: meetingId.optional(),
       since: z.number().int().min(0).optional().describe('The next value from the previous call, or 0.'),
       timeout_ms: z.number().int().min(0).max(30000).optional().describe('How long to wait for a new line. Default 20000, at most 30000.'),
-      kinds: z.array(z.enum(['speech', 'chat', 'spoken'])).optional(),
+      kinds: lineKinds,
     },
   }, guarded(async ({ meeting_id, since, timeout_ms, kinds }) => {
     if (meeting_id) need(meeting_id);
@@ -215,7 +228,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('send_chat', {
     title: 'Send a chat message',
-    description: 'Posts a chat line through Meet Bot (MeetingBot.say). This is the same chat channel as share_content. It does not speak.',
+    description: 'Posts a chat line as the bot. Same chat channel as share_content. It does not speak (say does that).',
     inputSchema: {
       meeting_id: meetingId,
       text: z.string().min(1).max(2000).describe('The chat message, up to 2000 characters.'),
@@ -229,7 +242,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('get_meeting_state', {
     title: 'Who is in the meeting',
-    description: 'Participants from Meet Bot, plus hand, microphone, and camera when the app reports them. Contract version 1 returns the people list only.',
+    description: 'Who is in the room, plus hand, microphone, and camera when Meeting Bot reports them. This is the people list. snapshot is the same list plus a PNG of the page. Contract version 1 returns the people list only.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = needLive(meeting_id);
@@ -263,8 +276,8 @@ export function registerSharedTools(server, ctx, { name, version }) {
   }));
 
   server.registerTool('snapshot', {
-    title: 'Snapshot of the Meet Bot page',
-    description: 'Read-only. Returns who is in the meeting and, when the browser is up, a PNG of the Meet Bot page this server already runs. It does not join a second browser and it does not change the meeting.',
+    title: 'Snapshot of the Meeting Bot page',
+    description: 'Who is in the room, and a PNG of the Meeting Bot page this server already has open, returned as image content. Read-only: it does not join another browser and it does not change the meeting. get_meeting_state is the same people list without the picture.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = needLive(meeting_id);
@@ -278,12 +291,17 @@ export function registerSharedTools(server, ctx, { name, version }) {
       gap = taken && taken.applied ? null : ((taken && taken.gap) || SNAPSHOT_GAP);
       shot = taken && taken.applied ? (taken.result == null ? null : taken.result) : null;
     }
-    return ok({ meeting_id: m.meeting_id, people, png, snapshot: shot, gap });
+    const body = ok({ meeting_id: m.meeting_id, people, png, snapshot: shot, gap });
+    if (!png) return body;
+    let bytes;
+    try { bytes = fs.readFileSync(png); } catch (e) { return body; }
+    if (!bytes.length) return body;
+    return { content: body.content.concat([{ type: 'image', data: bytes.toString('base64'), mimeType: 'image/png' }]) };
   }));
 
   server.registerTool('leave_meeting', {
     title: 'Leave the meeting',
-    description: 'Saves the transcript, then Meet Bot leaves. Call this when someone asks the bot to leave. Other participants can stay.',
+    description: 'The bot leaves and the transcript is saved. Same result as end_meeting. Call this when someone asks the bot to leave. Other participants stay. A scheduled order still inside its window is marked left early.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = need(meeting_id);
@@ -375,15 +393,15 @@ export function registerSharedTools(server, ctx, { name, version }) {
     title: 'Update a scheduled meeting',
     description: 'When occurrence is omitted, the change applies to the rule and the whole future series. When occurrence is set, only that occurrence changes. A transcript that already exists is not rewritten. The admin password is not accepted.',
     inputSchema: {
-      schedule_id: z.string().min(3).max(80),
+      schedule_id: z.string().min(3).max(80).describe('The schedule_id from schedule_meeting or list_schedule.'),
       occurrence: z.string().max(80).optional().describe('One occurrence id. Omit to change the whole future series.'),
-      start: z.string().max(64).optional(),
-      end: z.string().max(64).optional(),
-      topic: z.string().max(200).optional(),
+      start: z.string().max(64).optional().describe('New start, as an ISO time.'),
+      end: z.string().max(64).optional().describe('New end, as an ISO time.'),
+      topic: z.string().max(200).optional().describe('New room name.'),
       room_password: z.string().min(1).max(200).optional().describe('Replaces the stored join password. Not returned.'),
-      timezone: z.string().max(80).optional(),
-      recurrence: z.string().max(500).optional(),
-      early_margin: z.number().int().min(0).optional(),
+      timezone: z.string().max(80).optional().describe('IANA time zone. Default UTC.'),
+      recurrence: z.string().max(500).optional().describe('The calendar recurrence rule, stored as sent. An RRULE this process understands is expanded. Anything else is refused.'),
+      early_margin: z.number().int().min(0).optional().describe('Milliseconds before start to join.'),
     },
   }, guarded(async (args) => {
     const { schedule_id, occurrence, ...patch } = args;
@@ -397,8 +415,8 @@ export function registerSharedTools(server, ctx, { name, version }) {
     title: 'Cancel a scheduled meeting',
     description: 'Cancels one occurrence, or the series when occurrence is omitted. Leaves a live occurrence unless leave_if_live is false.',
     inputSchema: {
-      schedule_id: z.string().min(3).max(80),
-      occurrence: z.string().max(80).optional(),
+      schedule_id: z.string().min(3).max(80).describe('The schedule_id from schedule_meeting or list_schedule.'),
+      occurrence: z.string().max(80).optional().describe('One occurrence id. Omit to cancel the whole series.'),
       leave_if_live: z.boolean().optional().describe('Default true. Leave if that occurrence is live or in overrun.'),
     },
   }, guarded(async ({ schedule_id, occurrence, leave_if_live }) => {
@@ -421,16 +439,16 @@ export function registerSharedTools(server, ctx, { name, version }) {
     description: 'Bulk path for a calendar Grok Bot has already read. Each item is a schedule_meeting body plus external_id. This process does not call a calendar. A recurrence rule it cannot expand is reported and not stored. Over capacity is stored and listed in conflicts.',
     inputSchema: {
       orders: z.array(z.object({
-        link: z.string().url().max(2048),
-        room_password: z.string().min(1).max(200),
-        start: z.string().min(1).max(64),
-        end: z.string().max(64).optional(),
-        timezone: z.string().max(80).optional(),
-        recurrence: z.string().max(500).optional(),
-        early_margin: z.number().int().min(0).optional(),
-        external_id: z.string().max(200).optional(),
-        topic: z.string().max(200).optional(),
-      })).max(500),
+        link: z.string().url().max(2048).describe('The plain GifOS meeting link.'),
+        room_password: z.string().min(1).max(200).describe('The room password guests type. Stored for rejoin. Not returned.'),
+        start: z.string().min(1).max(64).describe('When the bot should be in the room, as an ISO time.'),
+        end: z.string().max(64).optional().describe('When overrun starts. Omit for start plus 8 hours.'),
+        timezone: z.string().max(80).optional().describe('IANA time zone. Default UTC.'),
+        recurrence: z.string().max(500).optional().describe('The calendar recurrence rule, stored as sent.'),
+        early_margin: z.number().int().min(0).optional().describe('Milliseconds before start to join. Default 60000.'),
+        external_id: z.string().max(200).optional().describe('Caller id. A second write with the same id updates the order.'),
+        topic: z.string().max(200).optional().describe('Room name.'),
+      })).max(500).describe('Up to 500 schedule_meeting bodies.'),
     },
   }, guarded(async ({ orders }) => {
     const created = [];
@@ -503,11 +521,11 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('tail_lines', {
     title: 'Tail speech, chat, and spoken lines',
-    description: 'Lines with seq greater than since. kinds may be speech, chat, or spoken. Omit meeting_id to read every meeting. Lines are raw.',
+    description: 'Every stored line with seq greater than since: speech, chat, and spoken. Filter with kinds. Omit meeting_id to read every meeting. tail_transcript is speech and spoken for one meeting only.',
     inputSchema: {
       meeting_id: meetingId.optional(),
-      since: z.number().int().min(0).optional(),
-      kinds: z.array(z.enum(['speech', 'chat', 'spoken'])).optional(),
+      since: sinceSeq,
+      kinds: lineKinds,
     },
   }, guarded(async ({ meeting_id, since, kinds }) => {
     if (meeting_id) need(meeting_id);
@@ -518,8 +536,8 @@ export function registerSharedTools(server, ctx, { name, version }) {
     title: 'Cross-meeting lines',
     description: 'Rows a summary is built from. This is not the summary. Grok Bot writes the prose.',
     inputSchema: {
-      since: z.number().int().min(0).optional(),
-      meeting_ids: z.array(meetingId).optional(),
+      since: sinceSeq,
+      meeting_ids: z.array(meetingId).optional().describe('Meetings to include. Omit for every meeting this server knows.'),
     },
   }, guarded(async ({ since, meeting_ids }) => {
     const wanted = meeting_ids && meeting_ids.length ? meeting_ids : meetings.all().map((m) => m.meeting_id);
@@ -544,7 +562,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
   server.registerTool('tail_events', {
     title: 'Tail connector events',
     description: 'Ordered events for the whole connector, including capacity.near, capacity.reached, and capacity.cleared. Pass next back as since.',
-    inputSchema: { since: z.number().int().min(0).optional() },
+    inputSchema: { since: z.number().int().min(0).optional().describe('Return events after this seq. Pass the previous next, or omit to read from the start.') },
   }, guarded(async ({ since }) => ok(events.tail(since || 0))));
 
   server.registerTool('capacity_status', {
