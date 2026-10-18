@@ -38,7 +38,6 @@ export function loadConfig(env = process.env) {
     botAudio: env.GIFOS_BOT_AUDIO ? path.resolve(String(env.GIFOS_BOT_AUDIO).trim()) : '', // Chromium needs an absolute path
     shotsDir: String(env.GIFOS_MCP_SHOTS || '').trim(),
     timeoutMs: Number(env.GIFOS_TIMEOUT_MS) > 0 ? Number(env.GIFOS_TIMEOUT_MS) : 120000,
-    autoInstallBrowser: env.GIFOS_MCP_NO_INSTALL !== '1',
     prewarm: env.GIFOS_MCP_LAZY !== '1',
     debug: env.GIFOS_MCP_DEBUG === '1',
     maxMeetings: positiveInt(env.GIFOS_MAX_MEETINGS, 4, 'GIFOS_MAX_MEETINGS'),

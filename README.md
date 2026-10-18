@@ -33,6 +33,12 @@ pinned to an exact commit. Everything runs on your own computer; there is no hos
   link, description, how people get in, who does what, and ready-to-send text. Nothing is sent and no
   calendar file is written.
 
+## The browser
+
+The servers drive the browser already on this computer: `GIFOS_CHROME` if set, else Google Chrome, else
+Microsoft Edge, else a Chromium that `npx playwright install chromium` installed earlier. They never download
+or install a browser. With none of these the server stops with a message saying what to install.
+
 ## Endpoints and downloads
 
 | What | Where | When | Size |
@@ -41,7 +47,6 @@ pinned to an exact commit. Everything runs on your own computer; there is no hos
 | GifOS relay | GifOS's default, or `GIFOS_RELAY` | while in a room | — |
 | Kokoro weights | `https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX`, revision `1939ad2a8e416c0acfeecc08a694d14ef25f2231` (or the mirror in `GIFOS_KOKORO_URL`) | first start, kept in `GIFOS_MCP_HOME/kokoro` | about 92 MB; every file is checked against its SHA-256 (`KOKORO_FILES` in `src/voice/kokoro.js`) before use |
 | Kokoro voices | inside the kokoro-js npm package | install | — |
-| Chromium for Playwright | Playwright's download servers | first start, unless `GIFOS_MCP_NO_INSTALL=1` or `GIFOS_CHROME` is set | about 150 MB |
 | Whisper model | GifOS store app, through the GifOS site | first transcription | about 77 MB |
 
 No telemetry. The only credential is the bot's own name and password (`GIFOS_MCP_HOME/bot.json`, mode 0600, or

@@ -8,9 +8,8 @@
 // store. Meeting Bot runs in RUN mode in one tab.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
+import { launchInstalled } from './browser.js';
 import { log } from './log.js';
 import { VOICE_GAP, INTERJECT_GAP, HAND_GAP, MIC_GAP, CAMERA_GAP, CONTROLS_GAP, SNAPSHOT_GAP } from './voice/settings.js';
 import { bridgeScript, hostRoles, HOST_BINDING, installPlan } from './voice/providers.js';
@@ -18,7 +17,6 @@ import { packHostResult, serveHost } from './voice/host.js';
 import { installKokoro } from './voice/kokoro.js';
 import { SpeechQueue } from './voice/queue.js';
 
-const require = createRequire(import.meta.url);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A short silent WAV for the bot's fake microphone, so the bot never opens
@@ -62,23 +60,11 @@ export class MeetingBotDriver {
     return this.starting;
   }
 
-  ensureBrowserBinary() {
-    if (this.cfg.chrome) return this.cfg.chrome;
-    const exe = chromium.executablePath();
-    if (fs.existsSync(exe)) return '';
-    if (!this.cfg.autoInstallBrowser) throw new Error('Chromium for Playwright is missing. Run: npx playwright install chromium');
-    log('Chromium is missing; running "playwright install chromium" (one time, about 150 MB)…');
-    const cli = path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js');
-    const r = spawnSync(process.execPath, [cli, 'install', 'chromium'], { stdio: ['ignore', 2, 2] });
-    if (r.status !== 0 || !fs.existsSync(exe)) throw new Error('Could not install Chromium. Run: npx playwright install chromium');
-    return '';
-  }
-
   async launch(profile, audioFile) {
-    const exe = this.ensureBrowserBinary();
-    const ctx = await chromium.launchPersistentContext(path.join(this.cfg.home, profile), {
+    // The browser already on this computer (Chrome, then Edge); never a download.
+    const dir = path.join(this.cfg.home, profile);
+    const { browser: ctx, used } = await launchInstalled((o) => chromium.launchPersistentContext(dir, o), {
       headless: this.cfg.headless,
-      executablePath: exe || undefined,
       viewport: { width: 1280, height: 800 },
       permissions: ['microphone'],
       args: [
@@ -91,7 +77,9 @@ export class MeetingBotDriver {
         '--disable-renderer-backgrounding',
         '--disable-backgrounding-occluded-windows',
       ],
-    });
+    }, this.cfg);
+    this.browserName = used;
+    log('browser: ' + used);
     const init = { gifos_meet_bar: '0', gifos_name: this.creds.name };
     if (this.cfg.relay) init.gifos_relay = this.cfg.relay;
     const roles = hostRoles(this.cfg);

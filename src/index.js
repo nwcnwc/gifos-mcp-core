@@ -12,4 +12,5 @@ export { EventLog } from './events.js';
 export { LiveTranscript } from './voice/live.js';
 export { scrub, CAMERA_GAP, HAND_GAP, MIC_GAP, INTERJECT_GAP, CONTROLS_GAP, SNAPSHOT_GAP } from './voice/settings.js';
 export { KOKORO_MODEL, KOKORO_REVISION, KOKORO_FILES } from './voice/kokoro.js';
+export { launchInstalled, browserCandidates, NO_BROWSER } from './browser.js';
 export { log } from './log.js';
