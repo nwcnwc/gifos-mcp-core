@@ -137,7 +137,7 @@ export function credentialProblem(name, password) {
 }
 
 export function generateCredentials() {
-  const name = 'notes-' + crypto.randomBytes(3).toString('hex');
+  const name = 'Meeting notes';
   // 24 base64url chars plus a fixed digit: always a letter and a digit.
   const password = crypto.randomBytes(18).toString('base64url') + '7';
   return { name, password };
