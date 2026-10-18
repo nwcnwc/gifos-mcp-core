@@ -11,8 +11,10 @@
 //   the meeting index can drop them, and the clock rejoins live orders on a
 //   worker that is still up.
 // - A worker that stops answering the heartbeat is killed and counts as lost.
-//   So is one that does not say up within bootMs (a stalled Kokoro download
-//   would hold every join to it), and joins go to the next worker.
+//   So is one that says it is alive and then does not say up within bootMs
+//   (a stalled boot would hold every join to it), and joins go to the next
+//   worker. The clock starts at that alive message, not at fork: a short
+//   join call budget must not kill a worker that is still starting.
 // - A call that gets no answer within callMs (joinMs for a browser start or
 //   a join) fails, but a worker that still answers the heartbeat stays up.
 //   A join that timed out keeps its seat until it answers, since the bot
@@ -175,16 +177,22 @@ class Worker {
       const child = this.pool.forkWorker(this.index, { tmpDir });
       this.child = child;
       let up = false;
-      // The heartbeat starts at up, so this covers the boot before it.
-      const boot = setTimeout(() => {
-        if (up || this.child !== child) return;
-        this.error = 'worker ' + this.index + ' did not boot within ' + this.pool.bootMs + 'ms';
-        try { child.kill('SIGKILL'); } catch (e) { /* exit follows */ }
-      }, this.pool.bootMs);
-      boot.unref();
+      // The heartbeat starts at up. bootMs starts when the child says it is
+      // alive, not at fork, so time spent reaching that line is not a failed
+      // boot. A child that never says up is still killed after bootMs.
+      let boot = null;
+      const armBoot = () => {
+        clearTimeout(boot);
+        boot = setTimeout(() => {
+          if (up || this.child !== child) return;
+          this.error = 'worker ' + this.index + ' did not boot within ' + this.pool.bootMs + 'ms';
+          try { child.kill('SIGKILL'); } catch (e) { /* exit follows */ }
+        }, this.pool.bootMs);
+        boot.unref();
+      };
       child.on('message', (msg) => {
         if (!msg || typeof msg !== 'object') return;
-        if (msg.event === 'boot') { child.send({ type: 'boot', cfg, creds: id.creds, index: this.index }); return; }
+        if (msg.event === 'boot') { armBoot(); child.send({ type: 'boot', cfg, creds: id.creds, index: this.index }); return; }
         if (msg.event === 'up') { up = true; clearTimeout(boot); this.state = 'up'; this.upAt = this.pool.now(); this.heartbeat(child); resolve(); return; }
         if (msg.event === 'pong') { this.lastPong = Date.now(); return; }
         if (msg.event === 'thinking') { this.pool.thinkingFrom(this.index, msg.id, msg.on); return; }
