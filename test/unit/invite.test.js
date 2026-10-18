@@ -75,7 +75,7 @@ test('a broadcast invite says how to watch, when it starts, and where Visit goes
   assert.equal(inv.visit_url, 'https://example.org/give');
   assert.equal(inv.start.local, '2026-10-25 10:00');
   assert.match(inv.roles.early, /countdown/);
-  assert.match(inv.roles.after, /ended/);
+  assert.match(inv.roles.after, /The stage is clear/);
   assert.match(inv.text, /Watch: /);
   assert.match(inv.text, /Visit: https:\/\/example.org\/give/);
   assert.equal(broadcastInvite({ link, stream: true }).kind, 'stream');

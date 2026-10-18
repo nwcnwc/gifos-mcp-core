@@ -141,7 +141,7 @@ export function broadcastInvite({ title, link, start, end, timezone, description
     host: (hostName ? hostName + ' goes' : 'The host goes') + ' live from the same link with the host password, which is never sent in an invite.',
     viewers: 'Viewers open the link to watch. Nobody needs an account, and a viewer\'s camera and microphone stay off. A viewer can raise a hand; the host can bring them on stage.',
     early: startMs != null ? 'Anyone who opens the link early sees when the ' + noun + ' starts, a countdown, and Add to calendar.' : '',
-    after: 'Anyone who opens the link after it ends reads that it has ended.',
+    after: 'Anyone who opens the link after it ends sees "The stage is clear."',
     notes: 'The ' + noun + ' is written down while people speak; every screen shows 📝 Transcribing.',
   };
   const text = [
