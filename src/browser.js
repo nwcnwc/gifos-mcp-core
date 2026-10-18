@@ -6,6 +6,7 @@
 // `npx playwright install chromium` put there earlier, if any. When none is
 // found the error says what to install.
 import fs from 'node:fs';
+import path from 'node:path';
 import { chromium } from 'playwright';
 
 export const NO_BROWSER = 'No Chrome or Edge on this computer. Install Google Chrome (https://www.google.com/chrome/), '
@@ -23,10 +24,29 @@ export function bundledChromium() {
   }
 }
 
+// Where Playwright looks for the "chrome" and "msedge" channels (its
+// registry). A launch of a channel that is not there still leaves a
+// playwright-artifacts-* and a profile folder in the temp folder, so a
+// channel that is not installed is skipped instead of tried.
+const CHANNEL_AT = {
+  chrome: { linux: '/opt/google/chrome/chrome', darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', win32: '\\Google\\Chrome\\Application\\chrome.exe' },
+  msedge: { linux: '/opt/microsoft/msedge/msedge', darwin: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge', win32: '\\Microsoft\\Edge\\Application\\msedge.exe' },
+};
+
+export function channelInstalled(channel, platform = process.platform, env = process.env, exists = fs.existsSync) {
+  const at = (CHANNEL_AT[channel] || {})[platform];
+  if (!at) return false;
+  const roots = platform === 'win32'
+    ? [env.LOCALAPPDATA, env.PROGRAMFILES, env['PROGRAMFILES(X86)'], env.HOMEDRIVE && env.HOMEDRIVE + '\\Program Files', env.HOMEDRIVE && env.HOMEDRIVE + '\\Program Files (x86)'].filter(Boolean)
+    : [''];
+  return roots.some((r) => exists(platform === 'win32' ? path.win32.join(r, at) : at));
+}
+
 // The launch options to try, in order. cfg.chrome is GIFOS_CHROME.
-export function browserCandidates(cfg, bundled = bundledChromium()) {
+export function browserCandidates(cfg, bundled = bundledChromium(), has = channelInstalled) {
   if (cfg && cfg.chrome) return [{ name: 'GIFOS_CHROME', executablePath: cfg.chrome }];
-  const out = [{ name: 'Google Chrome', channel: 'chrome' }, { name: 'Microsoft Edge', channel: 'msedge' }];
+  const out = [{ name: 'Google Chrome', channel: 'chrome' }, { name: 'Microsoft Edge', channel: 'msedge' }]
+    .map((c) => ({ ...c, present: Boolean(has(c.channel)) }));
   if (bundled) out.push({ name: 'Playwright Chromium', executablePath: bundled });
   return out;
 }
@@ -37,6 +57,7 @@ export async function launchInstalled(launch, opts, cfg, candidates) {
   const list = candidates || browserCandidates(cfg);
   let last = null;
   for (const c of list) {
+    if (c.present === false) continue;
     const o = { ...opts };
     if (c.channel) o.channel = c.channel;
     if (c.executablePath) o.executablePath = c.executablePath;

@@ -15,7 +15,7 @@ pinned to an exact commit. Everything runs on your own computer; there is no hos
   ([control contract](https://github.com/nwcnwc/gifos-apps-source/blob/main/meeting-bot/CONTROL.md), version 2).
   It also keeps the transcript lines, the join schedule, events and capacity. Both servers get the same
   tools for transcripts (`get_transcript`, `tail_transcript`, `tail_lines`, `wait_lines`), speaking and chat
-  (`say`, `send_chat`, `share_content`), the room (`get_meeting_state`, `snapshot`, `mute`, `unmute`,
+  (`say`, `send_chat`, `share_content`), how the bot looks (`set_bot_profile`), the room (`get_meeting_state`, `snapshot`, `mute`, `unmute`,
   `leave_meeting`, `end_meeting`), the schedule and status.
 - **No text model.** The assistant calling the tools is the brain. Meet Bot is handed
   `{ respond_to_command: false, speak: false }` on every join, so it answers nothing on its own; it speaks
@@ -51,6 +51,12 @@ or install a browser. With none of these the server stops with a message saying 
 
 No telemetry. The only credential is the bot's own name and password (`GIFOS_MCP_HOME/bot.json`, mode 0600, or
 `GIFOS_BOT_NAME`/`GIFOS_BOT_PASSWORD`). A host password passed to a tool is used for that call only.
+
+**How the bot looks** (`src/profile.js`). `GIFOS_BOT_NAME` alone sets the name people see and keeps the stored
+password. `GIFOS_BOT_PICTURE` is a GIF, PNG, JPEG or WebP file of at most 256 KB, kept in
+`GIFOS_MCP_HOME/bot-picture.json` (mode 0600) and sent to rooms like any person's picture. The `set_bot_profile` tool
+(`name?`, `picture_path?`, `clear_picture?`) changes both; a new name is refused while the bot is in a room, and the
+picture applies to rooms joined afterwards.
 
 ## Install scripts
 
