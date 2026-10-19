@@ -350,6 +350,8 @@ These are the company list. They persist across restarts (section 2). They retur
 
 `meeting_status` and `meetings_report` accept `schedule_id` as well as `meeting_id`. A series report is one block per occurrence, each with the window and phase from section 2, and that occurrence's lines only.
 
+**`instructions`** (optional on `schedule_meeting`, `update_schedule`, `import_schedule`, and `join_meeting`) is the owner's goal and instructions for that meeting, for example the questions of a daily check-in. It is plain text, at most 4000 characters, with control characters dropped. It is kept on the order in `schedule.json` (mode 0600), a series hands it to each occurrence, and one occurrence can have its own. `list_schedule`, `meeting_status`, `get_meeting_state`, and the `schedule.due` and `meeting.joined` events return it, scrubbed like every other field, so an agent woken by the clock knows what that meeting is for. This process never runs it, never calls a model with it, and never acts on it. An empty string clears it. A meeting without it has no `instructions` field anywhere and the bot only transcribes, as before.
+
 ### What the tools refuse to be
 
 - A dashboard, a theme, or a layout. The human's view is Grok Bot's.

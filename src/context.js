@@ -8,7 +8,7 @@ import { publicView, roomFromLink } from './meetings.js';
 import { plainLink } from './invite.js';
 import { LiveTranscript } from './voice/live.js';
 import { VOICE_GAP, scrub } from './voice/settings.js';
-import { ScheduleStore, publicOrder, localStamp, DEFAULT_SPAN_MS } from './schedule.js';
+import { ScheduleStore, publicOrder, localStamp, DEFAULT_SPAN_MS, cleanInstructions, withInstructions } from './schedule.js';
 import { EventLog } from './events.js';
 import { createClock } from './clock.js';
 import { log } from './log.js';
@@ -175,10 +175,11 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     }
   }
 
-  function rememberJoin(meeting, password, topic) {
+  function rememberJoin(meeting, password, topic, instructions) {
     const existing = schedule.all().find((o) => o.room === meeting.room && o.phase !== 'cancelled' && o.phase !== 'ended' && o.phase !== 'missed' && o.phase !== 'left_early' && o.phase !== 'series');
     if (existing) {
-      holdPhase(existing, { room_password: password, meeting_id: meeting.meeting_id, phase: 'live', topic: topic || existing.topic || meeting.topic });
+      holdPhase(existing, { room_password: password, meeting_id: meeting.meeting_id, phase: 'live', topic: topic || existing.topic || meeting.topic,
+        ...(instructions != null ? { instructions } : {}) });
       return;
     }
     // The bot already sits in the room: a failed schedule.json save must not
@@ -194,6 +195,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
         meeting_id: meeting.meeting_id,
         start: start.toISOString(),
         end: new Date(start.getTime() + DEFAULT_SPAN_MS).toISOString(),
+        instructions,
       });
     } catch (e) {
       const kept = schedule.all().find((o) => o.meeting_id === meeting.meeting_id && o.room === meeting.room && o.phase !== 'cancelled');
@@ -315,15 +317,35 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   }
 
 
+  // The owner's goal and instructions for a meeting, or '' (transcribe
+  // only). An open order is the source when there is one (update_schedule
+  // changes it), or its series before the clock seats a day; else what
+  // join_meeting was given.
+  function instructionsFor(m) {
+    const order = schedule.forMeeting(m.meeting_id)
+      || schedule.all().find((o) => o.meeting_id === m.meeting_id && o.phase === 'series');
+    if (order) return order.instructions || '';
+    return m.instructions || '';
+  }
+
   // The bot joins a room by its link now (join_meeting, join_broadcast).
   // A password, when given, is the room password guests type; it is kept on
-  // the schedule for rejoins and never returned.
-  async function joinByLink(link, password, topic) {
+  // the schedule for rejoins and never returned. instructions, when given,
+  // are the owner's for this meeting; undefined leaves them as they are.
+  async function joinByLink(link, password, topic, instructions) {
     const room = roomFromLink(link);
     if (!room) throw new Error('That is not a GifOS link (expected …/run.html#v=<room> or …/meet/<room>).');
+    const given = instructions === undefined ? undefined : cleanInstructions(instructions);
     const clean = plainLink(link, password || '');
     let m = meetings.byRoom(room);
-    if (m && m.state === 'live') return { meeting: m, note: 'Already in this room.' };
+    if (m && m.state === 'live') {
+      if (given !== undefined) {
+        holdSeat(m.meeting_id, { instructions: given });
+        const order = schedule.forMeeting(m.meeting_id);
+        if (order) holdPhase(order, { instructions: given });
+      }
+      return { meeting: meetings.get(m.meeting_id), note: 'Already in this room.' };
+    }
     const liveCount = meetings.all().filter((row) => row.state === 'live').length;
     if (liveCount >= cfg.maxMeetings) {
       emit({
@@ -338,9 +360,11 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     }
     if (!m) m = meetings.add({ topic: topic || '', room, link: clean });
     else if (m.link !== clean) meetings.update(m.meeting_id, { link: clean, topic: topic || m.topic });
+    // A new join with none given is transcribe only, not a past meeting's.
+    if ((given || '') !== (m.instructions || '')) meetings.update(m.meeting_id, { instructions: given || '' });
     const joined = await enterByHand(meetings.get(m.meeting_id), password);
-    if (password) rememberJoin(joined, password, topic);
-    emit({ type: 'meeting.joined', meeting_id: joined.meeting_id, data: { topic: joined.topic, link: joined.link, state: 'live' } });
+    if (password) rememberJoin(joined, password, topic, given);
+    emit({ type: 'meeting.joined', meeting_id: joined.meeting_id, data: withInstructions({ topic: joined.topic, link: joined.link, state: 'live' }, instructionsFor(joined)) });
     return { meeting: joined };
   }
 
@@ -348,7 +372,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     cfg, meetings, bot, captions, transcript, schedule, events, clock, botName,
     secret, secrets, ok, fail, emit, guarded, need, needLive,
     enter, enterByHand, joinByLink, rememberJoin, depart, stopJoin, holdSeat, holdPhase,
-    counts, thinkingOf, lastHumanAt, ourNames, nameIn, control, orderView, ensureMeeting,
+    counts, thinkingOf, lastHumanAt, ourNames, nameIn, control, orderView, ensureMeeting, instructionsFor,
     applyVoice, voiceState: () => ({ ...VOICE, handed: !!(handed && handed.applied), gap: handed && !handed.applied ? handed.gap : null }),
   };
 }

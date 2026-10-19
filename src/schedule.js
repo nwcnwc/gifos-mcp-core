@@ -12,6 +12,24 @@ export const DEFAULT_SPAN_MS = 8 * 60 * 60 * 1000;
 export const DEFAULT_EARLY_MS = 60 * 1000;
 export const DEFAULT_HORIZON_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_CAP = 4;
+// The owner's goal and instructions for one meeting (a check-in's questions,
+// say). Plain text kept for the agent that drives the bot; this server never
+// runs it. Empty means the default: transcribe only.
+export const INSTRUCTIONS_MAX = 4000;
+
+export function cleanInstructions(text) {
+  if (text == null) return '';
+  if (typeof text !== 'string') throw new Error('instructions must be text.');
+  const out = text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim();
+  if (out.length > INSTRUCTIONS_MAX) throw new Error('instructions must be at most ' + INSTRUCTIONS_MAX + ' characters.');
+  return out;
+}
+
+// Only rows that have instructions carry the field, so a meeting without
+// them looks exactly as before.
+export function withInstructions(row, instructions) {
+  return instructions ? { ...row, instructions } : row;
+}
 
 const DAY = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -161,7 +179,7 @@ export function expandRule(series, parsed, now, horizonEnd) {
 
 export function publicOrder(order) {
   if (!order) return null;
-  return {
+  return withInstructions({
     schedule_id: order.schedule_id,
     occurrence_id: order.occurrence_id || '',
     series_id: order.series_id || '',
@@ -177,7 +195,7 @@ export function publicOrder(order) {
     phase: order.phase,
     external_id: order.external_id || '',
     missed_reason: order.missed_reason || '',
-  };
+  }, order.instructions || '');
 }
 
 export function briefOrder(order) {
@@ -323,6 +341,7 @@ export class ScheduleStore {
     if (dup) {
       if (order.room_password) dup.room_password = order.room_password;
       if (order.topic) dup.topic = order.topic;
+      if (order.instructions) dup.instructions = order.instructions;
       this.save();
       return { order: dup, duplicate: true };
     }
@@ -374,6 +393,8 @@ export class ScheduleStore {
       if (order.phase === 'waiting_for_capacity') order.phase = 'upcoming';
     }
     if (next.topic) order.topic = String(next.topic);
+    // '' clears them: the meeting goes back to transcribe only.
+    if (next.instructions != null) order.instructions = cleanInstructions(next.instructions);
     if (next.room_password) order.room_password = String(next.room_password);
     if (next.timezone) order.timezone = assertZone(next.timezone);
     if (next.early_margin != null) order.early_margin = Number(next.early_margin);
@@ -403,6 +424,9 @@ export class ScheduleStore {
         series.exceptions = series.exceptions || [];
         const ex = { occurrence_id: row.occurrence_id, start: row.start, end: row.end, topic: row.topic };
         const at = series.exceptions.findIndex((item) => item.occurrence_id === row.occurrence_id);
+        const before = at >= 0 ? series.exceptions[at] : null;
+        if (patch.instructions != null) ex.instructions = row.instructions;
+        else if (before && before.instructions != null) ex.instructions = before.instructions;
         if (at >= 0) series.exceptions[at] = ex;
         else series.exceptions.push(ex);
         this.save();
@@ -490,6 +514,7 @@ function buildOrder(input, now) {
   const early = input.early_margin == null ? DEFAULT_EARLY_MS : Number(input.early_margin);
   if (!Number.isFinite(early) || early < 0) throw new Error('early_margin must be a number of milliseconds.');
   const recurrence = String(input.recurrence || '');
+  const instructions = cleanInstructions(input.instructions);
   return stripAdmin({
     schedule_id: 'sch_' + crypto.randomBytes(5).toString('hex'),
     occurrence_id: '',
@@ -510,6 +535,7 @@ function buildOrder(input, now) {
     missed_reason: '',
     exceptions: [],
     created_at: iso(now),
+    ...(instructions ? { instructions } : {}),
   });
 }
 
@@ -534,7 +560,13 @@ function childOrder(series, occurrenceId, slot) {
     missed_reason: '',
     exceptions: [],
     created_at: new Date().toISOString(),
+    ...(childInstructions(series, slot) ? { instructions: childInstructions(series, slot) } : {}),
   });
+}
+
+// One occurrence changed by hand keeps its own; the rest follow the series.
+function childInstructions(series, slot) {
+  return slot.instructions != null ? slot.instructions : (series.instructions || '');
 }
 
 export function localStamp(isoTime, timeZone) {

@@ -1,6 +1,6 @@
 // The schedule clock. One tick decides who joins, who waits, and who leaves.
 // It does not read a calendar. Callers pass `now` so a test can move the clock.
-import { QUIET_MS, briefOrder, capacityPicture, publicOrder } from './schedule.js';
+import { QUIET_MS, briefOrder, capacityPicture, publicOrder, withInstructions } from './schedule.js';
 import { readPrivate, writePrivate } from './private-file.js';
 import { log } from './log.js';
 
@@ -217,7 +217,8 @@ export function createClock(deps) {
         }
         if (!dueSent.has(noteKey(order))) {
           dueSent.add(noteKey(order));
-          emit('schedule.due', order.meeting_id, briefOrder(order));
+          // An agent woken by this event learns what the meeting is for.
+          emit('schedule.due', order.meeting_id, withInstructions(briefOrder(order), order.instructions));
         }
         try {
           const joined = await deps.join(order);
@@ -227,7 +228,7 @@ export function createClock(deps) {
           dueSent.delete(noteKey(order));
           crashCleared(order.room);
           setPhase(order.occurrence_id || order.schedule_id, { phase: 'live', meeting_id: joined.meeting_id });
-          emit('meeting.joined', joined.meeting_id, { topic: order.topic, link: order.link, state: 'live', schedule_id: order.schedule_id });
+          emit('meeting.joined', joined.meeting_id, withInstructions({ topic: order.topic, link: order.link, state: 'live', schedule_id: order.schedule_id }, order.instructions));
         } catch (e) {
           if (isNoSeat(e)) wait(order, 'worker');
           else joinFailed(noteKey(order), order.room, order.meeting_id, e, now);
@@ -249,7 +250,7 @@ export function createClock(deps) {
           enterFailed.delete(noteKey(order));
           crashCleared(order.room);
           setPhase(order.occurrence_id || order.schedule_id, { phase: now >= end ? 'overrun' : 'live', meeting_id: joined.meeting_id, overrun_at: now >= end ? new Date(now).toISOString() : '' });
-          emit('meeting.joined', joined.meeting_id, { topic: order.topic, link: order.link, state: 'live', schedule_id: order.schedule_id });
+          emit('meeting.joined', joined.meeting_id, withInstructions({ topic: order.topic, link: order.link, state: 'live', schedule_id: order.schedule_id }, order.instructions));
         } catch (e) {
           if (isNoSeat(e)) wait(order, 'worker');
           else joinFailed(noteKey(order), order.room, order.meeting_id, e, now);

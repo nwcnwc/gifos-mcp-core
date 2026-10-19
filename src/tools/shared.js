@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { publicView, roomFromLink } from '../meetings.js';
 import { CONTROLS_GAP, INTERJECT_GAP, SNAPSHOT_GAP, scrub } from '../voice/settings.js';
 import { WAKE_RE, QUESTION_RE } from '../voice/wake.js';
-import { publicOrder, capacityAt } from '../schedule.js';
+import { publicOrder, capacityAt, withInstructions, INSTRUCTIONS_MAX } from '../schedule.js';
 import { credentialProblem } from '../config.js';
 import { pictureFromFile, savePicture, saveName } from '../profile.js';
 
@@ -24,13 +24,17 @@ export function meetingIdFor(serverName) {
 export const meetingId = meetingIdFor('gifos-meet-mcp');
 
 const sinceSeq = z.number().int().min(0).optional().describe('Return lines with a seq greater than this. Omit or pass 0 to read from the start.');
+// The owner's goal and instructions for a meeting. Kept and handed back to
+// the agent that drives the bot; never run by this server.
+export const instructionsField = z.string().max(INSTRUCTIONS_MAX).optional().describe('The owner\'s goal and instructions for the bot in this meeting (for example the questions of a daily check-in), plain text up to ' + INSTRUCTIONS_MAX + ' characters. Stored and handed back to you in list_schedule, meeting_status and the schedule.due and meeting.joined events; this server never runs it. Omit for the default: the bot only transcribes. Do not put passwords or other secrets here.');
+
 const lineKinds = z.array(z.enum(['speech', 'chat', 'spoken'])).optional().describe('Which lines to return: speech (someone in the room), chat (a chat post), spoken (a line this bot said). Omit for all three.');
 
 export function registerSharedTools(server, ctx, { name, version }) {
   const meetingId = meetingIdFor(name);
   const {
     cfg, meetings, bot, transcript, schedule, events, clock, secret, secrets, ok, fail, emit, guarded, need, needLive,
-    holdSeat, depart, stopJoin, counts, thinkingOf, ourNames, nameIn, orderView, ensureMeeting,
+    holdSeat, depart, stopJoin, counts, thinkingOf, ourNames, nameIn, orderView, ensureMeeting, instructionsFor,
   } = ctx;
   server.registerTool('mute', {
     title: 'Mute the bot (stop listening)',
@@ -263,7 +267,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
         controls_gap = (extra && extra.gap) || CONTROLS_GAP;
       }
     }
-    return ok({
+    return ok(withInstructions({
       meeting_id: m.meeting_id,
       transcribing: !!m.transcribing,
       muted: !!m.muted,
@@ -272,7 +276,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       mic,
       camera,
       controls_gap,
-    });
+    }, instructionsFor(m)));
   }));
 
   server.registerTool('snapshot', {
@@ -325,6 +329,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       early_margin: z.number().int().min(0).optional().describe('Milliseconds before start to join. Default 60000.'),
       external_id: z.string().max(200).optional().describe('Caller id from a calendar import. A second write with the same id updates the order.'),
       topic: z.string().max(200).optional().describe('Room name. Defaults to the name from create_meeting.'),
+      instructions: instructionsField,
     },
   }, guarded(async (args) => {
     const room = roomFromLink(args.link);
@@ -402,6 +407,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       timezone: z.string().max(80).optional().describe('IANA time zone. Default UTC.'),
       recurrence: z.string().max(500).optional().describe('The calendar recurrence rule, stored as sent. An RRULE this process understands is expanded. Anything else is refused.'),
       early_margin: z.number().int().min(0).optional().describe('Milliseconds before start to join.'),
+      instructions: z.string().max(INSTRUCTIONS_MAX).optional().describe('New goal and instructions for the bot, plain text up to ' + INSTRUCTIONS_MAX + ' characters. An empty string clears them (transcribe only). Never run by this server.'),
     },
   }, guarded(async (args) => {
     const { schedule_id, occurrence, ...patch } = args;
@@ -448,6 +454,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
         early_margin: z.number().int().min(0).optional().describe('Milliseconds before start to join. Default 60000.'),
         external_id: z.string().max(200).optional().describe('Caller id. A second write with the same id updates the order.'),
         topic: z.string().max(200).optional().describe('Room name.'),
+        instructions: instructionsField,
       })).max(500).describe('Up to 500 schedule_meeting bodies.'),
     },
   }, guarded(async ({ orders }) => {
@@ -494,7 +501,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
         if ('camera' in extra.result) camera = !!extra.result.camera;
       }
     }
-    return ok({
+    return ok(withInstructions({
       meeting_id: m.meeting_id,
       topic: m.topic,
       state: m.state,
@@ -516,7 +523,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       schedule_id: order ? order.schedule_id : '',
       start: order ? order.start : null,
       end: order ? order.end : null,
-    });
+    }, instructionsFor(m)));
   }));
 
   server.registerTool('tail_lines', {
