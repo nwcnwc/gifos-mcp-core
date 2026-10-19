@@ -83,4 +83,4 @@ Unit tests need no network and no browser, except the Kokoro test, which keeps t
 
 ## License
 
-MIT. GifOS, Meeting Bot and Kokoro are separate projects with their own licenses.
+Copyright (c) 2026 Crowd Concepts, Inc. All rights reserved. See [LICENSE](LICENSE). GifOS, Meeting Bot and Kokoro are separate projects with their own licenses.
