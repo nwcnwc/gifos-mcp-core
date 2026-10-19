@@ -227,8 +227,7 @@ test('a resumed download puts the kept bytes and the rest together in order', as
   const file = path.join(dir, REPO, MODEL);
   const cache = weightsCache(dir, w.host, pinned(whole));
   const res = await cache.match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
-  assert.ok(res, 'the kept part is finished and answered from the cache');
-  assert.ok(Buffer.from(await res.arrayBuffer()).equals(whole), 'the answer is the whole file');
+  assert.equal(res, undefined, 'the finished file is left on disk for the local read');
   assert.ok(fs.readFileSync(file).equals(whole), 'the file on disk is the whole file');
   assert.deepEqual(w.ranges, [{ name: MODEL, range: 'bytes=300000-', ifRange: tagOf(whole) }]);
   assert.deepEqual(filesUnder(path.dirname(file)), [file], 'no part file (or its tag) is left');
@@ -244,8 +243,7 @@ test('a server that ignores Range gives the whole file, not the kept bytes twice
   const host = 'http://127.0.0.1:' + server.address().port;
   const dir = path.join(home, 'kokoro');
   const file = path.join(dir, REPO, MODEL);
-  const res = await weightsCache(dir, host, pinned(whole)).match(host + '/' + REPO + '/resolve/main/' + MODEL);
-  assert.ok(res);
+  await weightsCache(dir, host, pinned(whole)).match(host + '/' + REPO + '/resolve/main/' + MODEL);
   assert.ok(fs.readFileSync(file).equals(whole), 'the file on disk is the whole file');
 });
 
@@ -284,8 +282,8 @@ test('a resume tells the server which version its kept bytes are from', async (t
   await killedPart(t, home, whole, 200000);
   const w = await weightsServer(t, { [MODEL]: whole });
   const dir = path.join(home, 'kokoro');
-  const res = await weightsCache(dir, w.host, pinned(whole)).match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
-  assert.ok(res && Buffer.from(await res.arrayBuffer()).equals(whole), 'the same version is resumed into the whole file');
+  await weightsCache(dir, w.host, pinned(whole)).match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
+  assert.ok(fs.readFileSync(path.join(dir, REPO, MODEL)).equals(whole), 'the same version is resumed into the whole file');
   const ask = w.ranges.find((r) => r.name === MODEL);
   assert.ok(ask && /^bytes=\d+-$/.test(ask.range), 'the model is asked for from the kept bytes on; asked ' + JSON.stringify(w.ranges));
   assert.equal(ask.ifRange, tagOf(whole), 'the Range is sent with If-Range: the ETag the kept bytes came with');
@@ -300,6 +298,23 @@ test('a part from a server that gave no version tag is downloaded again, not res
   await weightsCache(dir, w.host).match(w.host + '/' + REPO + '/resolve/main/' + MODEL);
   assert.deepEqual(w.ranges.filter((r) => r.range), [], 'no Range is asked for bytes nobody can vouch for; asked ' + JSON.stringify(w.ranges));
   assert.deepEqual(filesUnder(path.join(dir, REPO)).filter((p) => p.endsWith('.part')), [], 'the unvouched part is dropped');
+});
+
+// transformers.js cannot use a cache hit for a model file (it ends in "Unable
+// to get model file path or buffer"), so a file on disk is read as a local model.
+test('a file already on disk is checked and left to be read from disk; only the lookup after put() gets bytes', async (t) => {
+  const home = freshHome(t);
+  const whole = pattern(5000);
+  const host = 'http://127.0.0.1:9';
+  const dir = path.join(home, 'kokoro');
+  const key = host + '/' + REPO + '/resolve/' + KOKORO_REVISION + '/' + MODEL;
+  const cache = weightsCache(dir, host, pinned(whole));
+  await cache.put(key, new Response(whole, { headers: { 'content-length': String(whole.length) } }));
+  const res = await cache.match(key);
+  assert.ok(res && Buffer.from(await res.arrayBuffer()).equals(whole), 'the lookup right after put() gets the bytes');
+  assert.equal(await cache.match(key), undefined, 'a later lookup leaves the checked file to the local read');
+  assert.equal(await weightsCache(dir, host, pinned(whole)).match(key), undefined, 'so does the next start');
+  assert.ok(fs.readFileSync(path.join(dir, REPO, MODEL)).equals(whole), 'the file stays');
 });
 
 // A running child renames its part files (.part, .part.tag) while a test

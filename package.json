@@ -1,6 +1,6 @@
 {
   "name": "gifos-mcp-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared core of the GifOS MCP servers (gifos-meet-mcp, gifos-broadcast-mcp): the headless GifOS Meeting Bot, transcripts, Kokoro speech, room links and invite details. Self-run only.",
   "license": "MIT",
   "type": "module",

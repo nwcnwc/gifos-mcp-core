@@ -1,7 +1,8 @@
 // Kokoro runs in this process, on the machine that runs the MCP server.
 // The first call downloads the pinned weights (KOKORO_REVISION, checked
-// against KOKORO_FILES) into GIFOS_MCP_HOME/kokoro; the af_heart voice
-// ships inside the kokoro-js package. Nothing here is a provider GIF, and nothing
+// against KOKORO_FILES) into GIFOS_MCP_HOME/kokoro, and later starts load
+// them from there; the af_heart voice ships inside the kokoro-js package.
+// Nothing here is a provider GIF, and nothing
 // listens on the network. The headless harness turns speak() into the
 // bytes for the tts role.
 import fs from 'node:fs';
@@ -101,8 +102,14 @@ export function installKokoro({ home, voice, host, dtype } = {}) {
 // ETag now, is dropped rather than joined to bytes of another version.
 // hashes: path in the model -> SHA-256 (the pinned KOKORO_FILES unless a
 // test hands its own stand-in files).
+// A file already on disk is checked and then left to transformers.js to read
+// from dir as a local model (useWeights sets localModelPath): a cache hit
+// on a model file ends in a second match() with no key, which can only miss,
+// and it then throws "Unable to get model file path or buffer". Only the
+// lookup that follows put() is answered with bytes.
 export function weightsCache(dir, host, hashes = KOKORO_FILES) {
   const base = String(host).replace(/\/+$/, '') + '/';
+  const fresh = new Set();
   const where = (key) => {
     const k = String(key);
     if (!k.startsWith(base)) return null;
@@ -117,6 +124,7 @@ export function weightsCache(dir, host, hashes = KOKORO_FILES) {
       if (!at) return undefined;
       if (!fs.existsSync(at.file) && !(await resume(key, at.file))) return undefined;
       await verifyFile(at.file, at.rel, hashes);
+      if (!fresh.delete(key)) return undefined;
       const bytes = await fs.promises.readFile(at.file);
       return new Response(bytes, { headers: { 'content-length': String(bytes.length) } });
     },
@@ -127,8 +135,33 @@ export function weightsCache(dir, host, hashes = KOKORO_FILES) {
       const total = parseInt(response.headers.get('content-length') || '0', 10);
       await writePart(at.file, response, 0, total, progress);
       await verifyFile(at.file, at.rel, hashes);
+      fresh.add(key);
     },
   };
+}
+
+// Points transformers.js (its env) at dir: downloads go through
+// weightsCache, and a file already there is read straight from dir.
+export function useWeights(env, dir, host) {
+  env.cacheDir = dir;
+  env.remoteHost = String(host).replace(/\/+$/, '') + '/';
+  env.remotePathTemplate = '{model}/resolve/' + KOKORO_REVISION + '/';
+  env.allowLocalModels = true;
+  env.localModelPath = dir;
+  env.useCustomCache = true;
+  env.customCache = weightsCache(dir, host);
+}
+
+// After a load failed: removes each weights file that is not its pinned
+// bytes (short or corrupt), so the next try fetches only those. Files that
+// match their SHA-256 stay.
+async function dropBadWeights(modelDir) {
+  for (const rel of Object.keys(KOKORO_FILES)) {
+    const file = path.join(modelDir, ...rel.split('/'));
+    if (!fs.existsSync(file)) continue;
+    checked.delete(file);
+    try { await verifyFile(file, rel); } catch (e) { log(oneLine(e)); }
+  }
 }
 
 // Streams response into <file>.<pid>.part from byte `from` on, then renames
@@ -273,11 +306,7 @@ async function importKokoro() {
 async function load(dir, voice, host, dtype) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const transformers = await import('@huggingface/transformers');
-  transformers.env.cacheDir = dir;
-  transformers.env.remoteHost = String(host).replace(/\/+$/, '') + '/';
-  transformers.env.remotePathTemplate = '{model}/resolve/' + KOKORO_REVISION + '/';
-  transformers.env.useCustomCache = true;
-  transformers.env.customCache = weightsCache(dir, host);
+  useWeights(transformers.env, dir, host);
   const { KokoroTTS } = await importKokoro();
   const modelDir = path.join(dir, ...KOKORO_MODEL.split('/'));
   dropDeadParts(modelDir);
@@ -302,9 +331,9 @@ async function load(dir, voice, host, dtype) {
   try {
     tts = await open(kind);
   } catch (first) {
-    // A short or corrupt file from an older run: fetch the weights once more.
-    log('Kokoro: the weights in ' + modelDir + ' did not load (' + oneLine(first) + '); downloading them again');
-    fs.rmSync(modelDir, { recursive: true, force: true });
+    // A short or corrupt file from an older run: fetch that file once more.
+    log('Kokoro: the weights in ' + modelDir + ' did not load (' + oneLine(first) + '); fetching any missing or corrupt file again');
+    await dropBadWeights(modelDir);
     seen.clear();
     try {
       tts = await open(kind);
@@ -335,8 +364,8 @@ async function load(dir, voice, host, dtype) {
           try { fp32 = await open('fp32'); }
           catch (first) {
             // Same recovery as the first load: a short file must not leave the line unspoken.
-            log('Kokoro: fp32 weights in ' + modelDir + ' did not load (' + oneLine(first) + '); downloading them again');
-            fs.rmSync(modelDir, { recursive: true, force: true });
+            log('Kokoro: fp32 weights in ' + modelDir + ' did not load (' + oneLine(first) + '); fetching any missing or corrupt file again');
+            await dropBadWeights(modelDir);
             seen.clear();
             try { fp32 = await open('fp32'); }
             catch (again) { throw new Error('Kokoro produced corrupt audio and fp32 did not load: ' + oneLine(again)); }

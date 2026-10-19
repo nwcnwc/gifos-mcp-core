@@ -3,10 +3,14 @@
 // a model row in the page's settings is dropped, and the page never fetches.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
-import { installKokoro } from '../../src/voice/kokoro.js';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { installKokoro, KOKORO_MODEL, KOKORO_FILES } from '../../src/voice/kokoro.js';
 import { MCP_TTS_APP } from '../../src/voice/settings.js';
 import { bridgeScript, HOST_BINDING, speakAsTts } from '../../src/voice/providers.js';
 import { packHostResult, serveHost } from '../../src/voice/host.js';
@@ -148,4 +152,87 @@ test('install leads to Kokoro, captions, and the model through the host binding'
 
   const other = await sandbox.GifOS.providers.call('cheapest', { op: 'chat' }).then(() => null, (e) => e);
   assert.match(other.message, /store provider was called for cheapest/);
+});
+
+// Restarts on a home that already has the weights. Each start is its own
+// process (fixtures/kokoro-child.js); the weights come from a stand-in
+// that serves HOME's verified files and lists every ask.
+const CHILD = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'kokoro-child.js');
+const Q8 = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model_quantized.onnx'];
+const modelDir = (home) => path.join(home, 'kokoro', ...KOKORO_MODEL.split('/'));
+
+// A home beside HOME (not under TMPDIR: the weights are ~90 MB). links are
+// files hard-linked to HOME's (copied when a link cannot be made); nothing
+// writes into a weights file in place, so HOME's stay whole.
+function homeBeside(t, links = []) {
+  const home = fs.mkdtempSync(HOME + '-restart-');
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  for (const rel of links) {
+    const to = path.join(modelDir(home), rel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    try { fs.linkSync(path.join(modelDir(HOME), rel), to); } catch { fs.copyFileSync(path.join(modelDir(HOME), rel), to); }
+  }
+  return home;
+}
+
+async function weightsFromHome(t) {
+  const asked = [];
+  const server = http.createServer((req, res) => {
+    const m = /^\/[^/]+\/[^/]+\/resolve\/[^/]+\/(.+)$/.exec(req.url);
+    const rel = m ? decodeURIComponent(m[1]) : req.url;
+    asked.push(rel);
+    const file = path.join(modelDir(HOME), rel);
+    if (!m || !KOKORO_FILES[rel] || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
+    const bytes = fs.readFileSync(file);
+    res.writeHead(200, { 'content-length': bytes.length, etag: '"' + KOKORO_FILES[rel] + '"' });
+    res.end(bytes);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  return { host: 'http://127.0.0.1:' + server.address().port, asked };
+}
+
+function start(home, host) {
+  return new Promise((resolve) => {
+    const p = spawn(process.execPath, [CHILD, home, host], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = { stdout: '', stderr: '' };
+    p.stdout.on('data', (d) => { out.stdout += d; });
+    p.stderr.on('data', (d) => { out.stderr += d; });
+    p.on('exit', (code) => resolve({ ...out, code }));
+  });
+}
+
+const inodes = (home) => Q8.map((rel) => fs.statSync(path.join(modelDir(home), rel)).ino);
+
+test('a restart with the weights already on disk loads them from there: nothing is downloaded or removed', async (t) => {
+  await installKokoro({ home: HOME, voice: 'af_heart' });
+  const home = homeBeside(t);
+  const w = await weightsFromHome(t);
+  const first = await start(home, w.host);
+  assert.equal(first.code, 0, 'the first start downloads and loads; stderr: ' + first.stderr.slice(-2000));
+  assert.ok(w.asked.includes('onnx/model_quantized.onnx'), 'the first start downloads the model; asked ' + JSON.stringify(w.asked));
+  const kept = inodes(home);
+  for (const n of [2, 3]) {
+    const before = w.asked.length;
+    const again = await start(home, w.host);
+    assert.equal(again.code, 0, 'start ' + n + ' loads; stderr: ' + again.stderr.slice(-2000));
+    assert.deepEqual(w.asked.slice(before), [], 'start ' + n + ' asks for nothing');
+    assert.doesNotMatch(again.stderr, /did not load|Unable to get model file/, 'start ' + n + ' loads the kept weights');
+    assert.deepEqual(inodes(home), kept, 'start ' + n + ' keeps the very same files');
+  }
+});
+
+test('a short model file is fetched again on its own; the verified files beside it are kept', async (t) => {
+  await installKokoro({ home: HOME, voice: 'af_heart' });
+  const home = homeBeside(t, Q8.slice(0, 3));
+  const model = path.join(modelDir(home), 'onnx/model_quantized.onnx');
+  fs.mkdirSync(path.dirname(model), { recursive: true });
+  fs.writeFileSync(model, fs.readFileSync(path.join(modelDir(HOME), 'onnx/model_quantized.onnx')).subarray(0, 1000000));
+  const linked = inodes(HOME).slice(0, 3);
+  const w = await weightsFromHome(t);
+  const out = await start(home, w.host);
+  assert.equal(out.code, 0, 'the start loads; stderr: ' + out.stderr.slice(-2000));
+  assert.deepEqual(w.asked, ['onnx/model_quantized.onnx'], 'only the short file is asked for');
+  assert.deepEqual(inodes(home).slice(0, 3), linked, 'the verified files are the same files as before');
+  assert.equal(fs.statSync(model).size, fs.statSync(path.join(modelDir(HOME), 'onnx/model_quantized.onnx')).size, 'the model is whole again');
 });
