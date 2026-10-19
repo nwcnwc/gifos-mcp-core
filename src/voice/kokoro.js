@@ -333,7 +333,14 @@ async function load(dir, voice, host, dtype) {
       const ensureFp32 = async () => {
         if (!fp32) {
           try { fp32 = await open('fp32'); }
-          catch (e) { throw new Error('Kokoro produced corrupt audio and fp32 did not load: ' + oneLine(e)); }
+          catch (first) {
+            // Same recovery as the first load: a short file must not leave the line unspoken.
+            log('Kokoro: fp32 weights in ' + modelDir + ' did not load (' + oneLine(first) + '); downloading them again');
+            fs.rmSync(modelDir, { recursive: true, force: true });
+            seen.clear();
+            try { fp32 = await open('fp32'); }
+            catch (again) { throw new Error('Kokoro produced corrupt audio and fp32 did not load: ' + oneLine(again)); }
+          }
         }
         if (!fp32.voices || !fp32.voices[chosen]) throw new Error('Kokoro has no voice ' + JSON.stringify(chosen) + '.');
         return fp32;
