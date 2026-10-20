@@ -366,6 +366,20 @@ export class MeetingBotDriver {
   async list() { return this.call('list'); }
   async transcript(sessionId) { return (await this.call('transcript', sessionId)).text || ''; }
 
+  // The chat lines Meet Bot kept for this meeting (CONTROL.md chatFile):
+  // everyone's posts, the bot's own included, oldest first. A contract-1
+  // app has no chat list; that is null, once checked, not an error per poll.
+  async chat(sessionId) {
+    if (this.chatMethod === false) return null;
+    if (this.chatMethod !== true) {
+      await this.ensureStarted();
+      this.chatMethod = await this.bot.frame.evaluate(() => typeof (window.MeetingBot && window.MeetingBot.chatFile) === 'function');
+      if (!this.chatMethod) return null;
+    }
+    const r = await this.call('chatFile', sessionId);
+    return Array.isArray(r && r.lines) ? r.lines : [];
+  }
+
   // The check passes no arguments, so a missing method never receives a payload.
   async whenMethod(check, gap, invoke) {
     await this.ensureStarted();

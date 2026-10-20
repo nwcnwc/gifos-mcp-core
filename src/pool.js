@@ -670,6 +670,7 @@ export class WorkerPool {
   async say(id, text) { const r = this.route(id); return r.w.call('say', r.local, String(text)); }
   async people(id) { const r = this.route(id); return r.w.call('people', r.local); }
   async transcript(id) { const r = this.route(id); return r.w.call('transcript', r.local); }
+  async chat(id) { const r = this.route(id); return r.w.call('chat', r.local); }
   async interject(id, text, opts) { const r = this.route(id); return r.w.call('interject', r.local, String(text), opts && opts.voice ? { voice: String(opts.voice) } : undefined); }
   async raiseHand(id, on) { const r = this.route(id); return r.w.call('raiseHand', r.local, !!on); }
   async setMic(id, on) { const r = this.route(id); return r.w.call('setMic', r.local, !!on); }

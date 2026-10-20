@@ -25,6 +25,12 @@ function endsLine(file) {
   finally { if (fd !== undefined) fs.closeSync(fd); }
 }
 
+// One chat line's identity: who posted it, when, and what. The same words
+// posted twice are two lines, so the time is part of it.
+function chatSource(l) {
+  return String((l && l.by) || '') + '\u0000' + String((l && l.at) || '') + '\u0000' + String((l && l.text) || '');
+}
+
 export function publicLine(row) {
   return { seq: row.seq, ts: row.ts, speaker: row.speaker, text: row.text, kind: row.kind };
 }
@@ -34,6 +40,7 @@ export class LiveTranscript {
     this.lines = [];
     this.seq = 0;
     this.snapshots = new Map();
+    this.chatCounts = new Map();   // per meeting: chat lines already taken
     this.listeners = new Set();
     this.unsaved = [];        // rows in memory whose append to disk failed
     this.torn = new Set();    // files whose last write may have stopped mid-line
@@ -162,6 +169,42 @@ export class LiveTranscript {
     return new Set(this.lines.filter((l) => l.meeting_id === meetingId && (l.kind === 'speech' || l.kind === 'spoken') && l.source).map((l) => l.source));
   }
 
+  // Chat is the list Meet Bot keeps per meeting (chatFile): every line
+  // anyone posted, the bot's own included, oldest first. It only grows while
+  // the bot is seated, so the lines past the last count are new. A restart
+  // (or a reseat, which starts the list again) has no count to trust; then
+  // a line whose source is already stored is not appended again. The bot's
+  // own post is already a row (send_chat appends it), so it is kept once.
+  ingestChat(meetingId, lines, botName) {
+    const list = Array.isArray(lines) ? lines : [];
+    const prev = this.chatCounts.get(meetingId);
+    let fresh;
+    if (typeof prev === 'number' && list.length >= prev) {
+      fresh = list.slice(prev);
+    } else {
+      const have = this.seenChat(meetingId);
+      fresh = list.filter((l) => !have.has(chatSource(l)));
+    }
+    this.chatCounts.set(meetingId, list.length);
+    const skip = new Set([].concat(botName || []).map((n) => String(n).toLowerCase()).filter(Boolean));
+    const added = [];
+    for (const l of fresh) {
+      const speaker = String((l && l.by) || '').trim();
+      const text = String((l && l.text) || '').trim();
+      if (!speaker || !text) continue;
+      if (skip.has(speaker.toLowerCase())) {
+        const dup = this.lines.some((r) => r.meeting_id === meetingId && r.kind === 'chat' && r.speaker.toLowerCase() === speaker.toLowerCase() && r.text === text);
+        if (dup) continue;
+      }
+      added.push(this.append({ meeting_id: meetingId, speaker, text, kind: 'chat', source: chatSource(l) }));
+    }
+    return added;
+  }
+
+  seenChat(meetingId) {
+    return new Set(this.lines.filter((l) => l.meeting_id === meetingId && l.kind === 'chat' && l.source).map((l) => l.source));
+  }
+
   tail(meetingId, since) {
     const n = Number(since) || 0;
     const lines = this.lines.filter((l) => l.meeting_id === meetingId && (l.kind === 'speech' || l.kind === 'spoken') && l.seq > n).map(publicLine);
@@ -203,7 +246,16 @@ export function watchCaptions({ meetings, bot, live, intervalMs, botName, scrubT
       // Stopped, restarted or reseated while the call was out: drop it.
       const now = meetings.get(id);
       if (timers.get(id) !== timer || !now || now.state !== 'live' || now.session_id !== session) return;
-      live.ingestCaption(id, text, typeof botName === 'function' ? botName() : botName);
+      const names = typeof botName === 'function' ? botName() : botName;
+      live.ingestCaption(id, text, names);
+      // Chat rides a list of its own (Meet Bot keeps chat out of the
+      // transcript), so a chat that names the bot is read here, or never.
+      if (typeof bot.chat === 'function') {
+        const lines = await bot.chat(session);
+        const then = meetings.get(id);
+        if (timers.get(id) !== timer || !then || then.state !== 'live' || then.session_id !== session) return;
+        if (Array.isArray(lines)) live.ingestChat(id, lines.map((l) => ({ by: l && l.by, at: l && l.at, text: hide(String((l && l.text) || '')) })), names);
+      }
     } catch (e) { /* the next poll retries */ }
   }
   function tick(id, timer) {

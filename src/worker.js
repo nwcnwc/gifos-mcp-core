@@ -10,7 +10,7 @@ import { SpeechQueue } from './voice/queue.js';
 // What the supervisor may call. Anything else is refused, so a message can
 // not reach close(), start(), or a private helper by name.
 export const WORKER_METHODS = [
-  'ensureStarted', 'join', 'leave', 'transcribe', 'say', 'people', 'list', 'transcript',
+  'ensureStarted', 'join', 'leave', 'transcribe', 'say', 'people', 'list', 'transcript', 'chat',
   'setVoice', 'interject', 'raiseHand', 'setMic', 'setCamera', 'meetingState', 'snapshot', 'info',
 ];
 
