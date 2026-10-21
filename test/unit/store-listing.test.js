@@ -3,7 +3,10 @@
 import http from 'node:http';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { storeAppListing } from '../../src/driver.js';
+import fs from 'node:fs';
+import { storeAppListing, MeetingBotDriver } from '../../src/driver.js';
+import { loadConfig } from '../../src/config.js';
+import { tmpHome } from './fixtures/tmp-home.js';
 
 function serve(handler) {
   const server = http.createServer(handler);
@@ -34,4 +37,21 @@ test('a listing whose appId matches is the Meeting Bot app', async () => {
   const listed = await storeAppListing(url, 'meeting-bot');
   assert.equal(listed.appId, 'meeting-bot');
   server.close();
+});
+
+test('start() on a store with no Meeting Bot fails before a browser opens or anything installs', async (t) => {
+  const hits = [];
+  const { server, url } = await serve((req, res) => { hits.push(req.url); res.writeHead(404); res.end('no'); });
+  const home = tmpHome('gifos-store-listing-');
+  t.after(() => { server.close(); fs.rmSync(home, { recursive: true, force: true }); });
+  const cfg = loadConfig({ GIFOS_MCP_HOME: home, GIFOS_URL: url, GIFOS_BOT_NAME: 'notes-test', GIFOS_BOT_PASSWORD: 'quiet-cedar-42', GIFOS_TTS_ENGINE: 'none' });
+  const driver = new MeetingBotDriver(cfg, { name: 'notes-test', password: 'quiet-cedar-42' });
+  const did = [];
+  driver.launch = async () => { did.push('launch'); throw new Error('launched'); };
+  driver.installFromStore = async (desk, slug) => { did.push('install ' + slug); throw new Error('installed'); };
+  const t0 = Date.now();
+  await assert.rejects(() => driver.start(), /has no meeting-bot app, or this is the wrong build\. Set GIFOS_URL/);
+  assert.ok(Date.now() - t0 < 2000);
+  assert.deepEqual(did, []);
+  assert.deepEqual(hits, ['/apps/meeting-bot/app.json']);
 });

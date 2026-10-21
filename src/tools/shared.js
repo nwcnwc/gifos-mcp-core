@@ -32,6 +32,8 @@ const lineKinds = z.array(z.enum(['speech', 'chat', 'spoken'])).optional().descr
 
 export function registerSharedTools(server, ctx, { name, version }) {
   const meetingId = meetingIdFor(name);
+  // The tool that makes a link on this server (schedule_meeting names it).
+  const makes = name === 'gifos-broadcast-mcp' ? 'create_broadcast' : 'create_meeting';
   const {
     cfg, meetings, bot, transcript, schedule, events, clock, secret, secrets, ok, fail, emit, guarded, need, needLive,
     holdSeat, depart, stopJoin, counts, thinkingOf, ourNames, nameIn, orderView, ensureMeeting, instructionsFor,
@@ -318,9 +320,9 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('schedule_meeting', {
     title: 'Schedule the bot to join a meeting',
-    description: 'Stores a join order for a link that already exists. room_password is the password Grok Bot put in the invite. The bot joins one minute before start unless early_margin says otherwise. end may be omitted; the stored end is then start plus 8 hours. This call does not join yet and does not send mail. The room password is kept on the schedule and is not returned.',
+    description: 'Stores a join order for a link that already exists. room_password is the password guests were given in the invite. The bot joins one minute before start unless early_margin says otherwise. end may be omitted; the stored end is then start plus 8 hours. This call does not join yet and does not send mail. The room password is kept on the schedule and is not returned.',
     inputSchema: {
-      link: z.string().url().max(2048).describe('The plain GifOS meeting link from create_meeting.'),
+      link: z.string().url().max(2048).describe('The plain GifOS link from ' + makes + '.'),
       room_password: z.string().min(1).max(200).describe('The room password guests type. Stored for rejoin. Not returned.'),
       start: z.string().min(1).max(64).describe('When the bot should be in the room, as an ISO time.'),
       end: z.string().max(64).optional().describe('When overrun starts. Omit for start plus 8 hours.'),
@@ -328,7 +330,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       recurrence: z.string().max(500).optional().describe('The calendar recurrence rule, stored as sent. An RRULE this process understands is expanded. Anything else is refused.'),
       early_margin: z.number().int().min(0).optional().describe('Milliseconds before start to join. Default 60000.'),
       external_id: z.string().max(200).optional().describe('Caller id from a calendar import. A second write with the same id updates the order.'),
-      topic: z.string().max(200).optional().describe('Room name. Defaults to the name from create_meeting.'),
+      topic: z.string().max(200).optional().describe('Room name. Defaults to the name from ' + makes + '.'),
       instructions: instructionsField,
     },
   }, guarded(async (args) => {
@@ -442,7 +444,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('import_schedule', {
     title: 'Import schedule orders',
-    description: 'Bulk path for a calendar Grok Bot has already read. Each item is a schedule_meeting body plus external_id. This process does not call a calendar. A recurrence rule it cannot expand is reported and not stored. Over capacity is stored and listed in conflicts.',
+    description: 'Bulk path for a calendar you have already read. Each item is a schedule_meeting body plus external_id. This process does not call a calendar. A recurrence rule it cannot expand is reported and not stored. Over capacity is stored and listed in conflicts.',
     inputSchema: {
       orders: z.array(z.object({
         link: z.string().url().max(2048).describe('The plain GifOS meeting link.'),
@@ -541,7 +543,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('meetings_report', {
     title: 'Cross-meeting lines',
-    description: 'Rows a summary is built from. This is not the summary. Grok Bot writes the prose.',
+    description: 'Rows a summary is built from. This is not the summary. You write the prose.',
     inputSchema: {
       since: sinceSeq,
       meeting_ids: z.array(meetingId).optional().describe('Meetings to include. Omit for every meeting this server knows.'),
@@ -574,7 +576,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('capacity_status', {
     title: 'Capacity of the meeting bot',
-    description: 'The latest capacity picture: level ok, near, or reached, who is seated, who is waiting, and future clashes inside the horizon. Grok Bot calls this on connect and when the human asks.',
+    description: 'The latest capacity picture: level ok, near, or reached, who is seated, who is waiting, and future clashes inside the horizon. Call this on connect and when the human asks.',
     inputSchema: {},
   }, guarded(async () => ok(clock.picture(Date.now()))));
 

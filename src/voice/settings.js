@@ -9,7 +9,7 @@ export const HAND_GAP = 'Meeting Bot has no raiseHand method (contract version 1
 export const MIC_GAP = 'Meeting Bot has no setMic method (contract version 1). The bot has no microphone until the app accepts the setting.';
 export const CAMERA_GAP = 'Meeting Bot has no setCamera method (contract version 1). The bot has no camera until the app accepts the setting.';
 export const CONTROLS_GAP = 'Meeting Bot has no meetingState method (contract version 1). Hand, microphone, and camera are not reported.';
-export const SNAPSHOT_GAP = 'Meeting Bot has no snapshot method (contract version 1). A PNG of the Meet Bot page is saved when that page is open.';
+export const SNAPSHOT_GAP = 'Meeting Bot has no snapshot method (contract version 1). A PNG of the Meeting Bot page is saved when that page is open.';
 
 // The store app, used only when GIFOS_TTS_APP names one. The default voice
 // is Kokoro in this process. MCP_TTS_APP is the label setVoice carries.
