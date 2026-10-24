@@ -188,8 +188,9 @@ export class MeetingBotDriver {
       await desk.waitForFunction(() => !document.querySelector('#update'), null, { timeout: this.cfg.timeoutMs }).catch(() => {});
       return have;
     }
-    await desk.waitForURL(/index\.html/, { timeout: this.cfg.timeoutMs }).catch(() => {
-      throw new Error('The GifOS store at ' + this.cfg.gifosUrl + ' has no meeting-bot app, or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
+    // 0.9.24+ returns to /versions/<ver>/ after an install; older builds return to index.html.
+    await desk.waitForURL(/index\.html|\/versions\/[^/]+\/(?:[?#]|$)/, { timeout: this.cfg.timeoutMs }).catch(() => {
+      throw new Error('Installing "' + slug + '" from the GifOS store at ' + this.cfg.gifosUrl + ' did not return to the desktop (still at ' + desk.url() + ').');
     });
     await desk.waitForSelector('.icon', { timeout: this.cfg.timeoutMs });
     // The store writes the file, then the desktop places its icon (a provider
