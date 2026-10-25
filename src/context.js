@@ -5,6 +5,7 @@
 // in driver.js, the WorkerPool in pool.js, or a fake in the unit tests).
 import path from 'node:path';
 import { publicView, roomFromLink } from './meetings.js';
+import { gifosHostAllowed } from './links.js';
 import { plainLink } from './invite.js';
 import { LiveTranscript } from './voice/live.js';
 import { VOICE_GAP, scrub } from './voice/settings.js';
@@ -335,6 +336,11 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   async function joinByLink(link, password, topic, instructions) {
     const room = roomFromLink(link);
     if (!room) throw new Error('That is not a GifOS link (expected …/run.html#v=<room> or …/meet/<room>).');
+    if (!gifosHostAllowed(link, cfg.gifosUrl)) {
+      let host = '';
+      try { host = new URL(String(link)).host; } catch (e) { host = ''; }
+      throw new Error('That link is not on GifOS (' + host + '). The bot joins only ' + cfg.gifosUrl + ', gifos.app or this computer; set GIFOS_URL to use another GifOS.');
+    }
     const given = instructions === undefined ? undefined : cleanInstructions(instructions);
     const clean = plainLink(link, password || '');
     let m = meetings.byRoom(room);

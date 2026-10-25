@@ -364,6 +364,29 @@ export class MeetingBotDriver {
   async transcribe(sessionId, on) { await this.call('transcribe', sessionId, !!on); }
   async say(sessionId, text) { await this.call('say', sessionId, String(text)); }
   async people(sessionId) { return this.call('people', sessionId); }
+
+  // GifOS shows a banner in the meeting page when this network blocks the
+  // direct (peer to peer) connections a meeting needs. Then nobody outside
+  // sees or hears the bot. Returns that banner's text, or ''.
+  async networkWarning(sessionId) {
+    if (!this.bot || !this.bot.app) return '';
+    return this.bot.app.evaluate((id) => {
+      const re = /(network blocks the direct connections[^.]*\.?|outside your network cannot connect[^.]*\.?)/i;
+      const frames = Array.from(document.querySelectorAll('iframe[data-gifos-meet]'));
+      const f = frames.find((x) => x.getAttribute('data-gifos-meet') === String(id)) || (frames.length === 1 ? frames[0] : null);
+      const docs = [];
+      try { if (f && f.contentDocument) docs.push(f.contentDocument); } catch (e) { /* other origin */ }
+      for (const d of docs) {
+        const t = (d.body && d.body.innerText) || '';
+        const m = re.exec(t);
+        if (m) {
+          const line = t.split('\n').find((l) => re.test(l)) || m[1];
+          return line.trim().slice(0, 300);
+        }
+      }
+      return '';
+    }, sessionId).catch(() => '');
+  }
   async list() { return this.call('list'); }
   async transcript(sessionId) { return (await this.call('transcript', sessionId)).text || ''; }
 

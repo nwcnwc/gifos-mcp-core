@@ -676,6 +676,7 @@ export class WorkerPool {
   async setMic(id, on) { const r = this.route(id); return r.w.call('setMic', r.local, !!on); }
   async setCamera(id, on) { const r = this.route(id); return r.w.call('setCamera', r.local, !!on); }
   async meetingState(id) { const r = this.route(id); return r.w.call('meetingState', r.local); }
+  async networkWarning(id) { const r = this.route(id); return r.w.call('networkWarning', r.local); }
   async snapshot(id) { const r = this.route(id); return r.w.call('snapshot', r.local); }
 
   async list() {
