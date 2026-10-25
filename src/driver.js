@@ -59,6 +59,42 @@ export async function sheetOrReady({ sheet, ready, timeoutMs = 8000, pollMs = 10
   }
 }
 
+export const RECORDING_SLICE = 4 * 1024 * 1024;
+
+function recordingName(sessionId, rec) {
+  return String(rec.name || ('recording-' + sessionId + '.webm')).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'recording.webm';
+}
+const EMPTY_REC = 'There is no recording for this meeting. Call start_recording first, then stop_recording or get_recording.';
+
+// Appends slices (Buffers, sync or async iterable) to a file under dir.
+// opts.file names it outright; otherwise <now>-<name>. Empty is an error.
+export async function writeRecording(dir, sessionId, rec, slices, opts = {}, now = Date.now) {
+  if (!rec.size) throw new Error(EMPTY_REC);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const name = recordingName(sessionId, rec);
+  const file = path.join(dir, opts.file || (now() + '-' + name));
+  const part = file + '.part';
+  const fd = fs.openSync(part, 'w', 0o600);
+  let size = 0;
+  try {
+    for await (const b of slices) { fs.writeSync(fd, b); size += b.length; }
+  } finally { fs.closeSync(fd); }
+  fs.renameSync(part, file);
+  return { path: file, name, mime: rec.mime || 'video/webm', size };
+}
+
+// The same, from one base64 string (unit tests and small files).
+export function saveRecording(home, sessionId, rec, now = Date.now) {
+  const bytes = Buffer.from(rec.b64 || '', 'base64');
+  if (!bytes.length) throw new Error(EMPTY_REC);
+  const dir = path.join(home, 'recordings');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const name = recordingName(sessionId, rec);
+  const file = path.join(dir, now() + '-' + name);
+  fs.writeFileSync(file, bytes, { mode: 0o600 });
+  return { path: file, name, mime: rec.mime || 'video/webm', size: bytes.length };
+}
+
 export class MeetingBotDriver {
   constructor(cfg, creds, kokoro, hooks) {
     this.cfg = cfg;
@@ -515,6 +551,42 @@ export class MeetingBotDriver {
       try { await this.bot.app.screenshot({ path: png }); } catch (e) { png = ''; }
     }
     return { applied: taken.applied, gap: taken.gap || null, png, result: taken.result == null ? null : taken.result };
+  }
+
+  // Recording (contract v1: record, recording). Everyone in the room sees the
+  // ⏺ recording indicator on the bot's tile while it is on; the app draws it.
+  async startRecording(sessionId) { return this.call('record', sessionId, true); }
+  async stopRecording(sessionId) { return this.call('record', sessionId, false); }
+
+  // Stops recording if it is on (the app's recording() does), then saves the
+  // file under <home>/recordings and returns { path, name, mime, size }.
+  async getRecording(sessionId, opts = {}) {
+    await this.ensureStarted();
+    const frame = this.bot.frame;
+    const key = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const head = await frame.evaluate(({ id, key }) => window.MeetingBot.recording(id).then((rec) => {
+      (window.__mcpRec = window.__mcpRec || {})[key] = new Uint8Array(rec.bytes || new ArrayBuffer(0));
+      return { ok: true, name: rec.name || '', mime: rec.mime || '', size: window.__mcpRec[key].length };
+    }, (e) => ({ ok: false, error: String((e && e.message) || e) })), { id: sessionId, key });
+    if (!head.ok) throw new Error('Meeting Bot: ' + head.error);
+    // Copy across in slices and append to disk, so a long meeting is never
+    // one giant string in this process.
+    const slices = (async function* () {
+      try {
+        for (let at = 0; at < head.size; at += RECORDING_SLICE) {
+          const b64 = await frame.evaluate(({ key, at, n }) => {
+            const u8 = window.__mcpRec[key].subarray(at, at + n);
+            let bin = '';
+            for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+            return btoa(bin);
+          }, { key, at, n: RECORDING_SLICE });
+          yield Buffer.from(b64, 'base64');
+        }
+      } finally {
+        await frame.evaluate((key) => { if (window.__mcpRec) delete window.__mcpRec[key]; }, key).catch(() => {});
+      }
+    })();
+    return writeRecording(opts.dir || path.join(this.cfg.home, 'recordings'), sessionId, head, slices, opts);
   }
 
   botNames() { return [this.creds.name]; }

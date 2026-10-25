@@ -11,7 +11,7 @@ import { SpeechQueue } from './voice/queue.js';
 // not reach close(), start(), or a private helper by name.
 export const WORKER_METHODS = [
   'ensureStarted', 'join', 'leave', 'transcribe', 'say', 'people', 'list', 'transcript', 'chat',
-  'setVoice', 'interject', 'raiseHand', 'setMic', 'setCamera', 'meetingState', 'snapshot', 'info', 'networkWarning',
+  'setVoice', 'interject', 'raiseHand', 'setMic', 'setCamera', 'meetingState', 'snapshot', 'info', 'networkWarning', 'startRecording', 'stopRecording', 'getRecording',
 ];
 
 // The TMPDIR the pool made for this worker. With the supervisor gone nobody

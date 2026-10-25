@@ -56,7 +56,7 @@ import { log } from './log.js';
 const WORKER_SCRIPT = fileURLToPath(new URL('./worker.js', import.meta.url));
 const SESSION_RE = /^w(\d+):(.+)$/;
 // Calls that may start a browser or wait on a meeting page get joinMs.
-const SLOW_METHODS = new Set(['ensureStarted', 'join']);
+const SLOW_METHODS = new Set(['ensureStarted', 'join', 'stopRecording', 'getRecording']);
 // Meet Bot's answer for a session it does not hold: already left.
 const GONE_RE = /No such meeting/;
 
@@ -678,6 +678,9 @@ export class WorkerPool {
   async meetingState(id) { const r = this.route(id); return r.w.call('meetingState', r.local); }
   async networkWarning(id) { const r = this.route(id); return r.w.call('networkWarning', r.local); }
   async snapshot(id) { const r = this.route(id); return r.w.call('snapshot', r.local); }
+  async startRecording(id) { const r = this.route(id); return r.w.call('startRecording', r.local); }
+  async stopRecording(id) { const r = this.route(id); return r.w.call('stopRecording', r.local); }
+  async getRecording(id, opts) { const r = this.route(id); return r.w.call('getRecording', r.local, opts || {}); }
 
   async list() {
     const ready = this.workers.filter((w) => w.state === 'ready');
