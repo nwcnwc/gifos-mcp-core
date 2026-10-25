@@ -23,6 +23,15 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   const schedule = scheduleIn || new ScheduleStore(cfg.home);
   const events = eventsIn || new EventLog(cfg.home);
   const secret = [botPassword || ''];
+  // Products hang work on joins and leaves here (gifos-meet-mcp records and
+  // archives every meeting). A hook that throws never blocks the join or leave.
+  const hooks = { joined: [], leaving: [] };
+  async function runHooks(kind, m) {
+    for (const fn of hooks[kind]) {
+      try { await fn(m); }
+      catch (e) { log(kind + ' hook failed: ' + scrub(String((e && e.message) || e), secrets())); }
+    }
+  }
   // Meet Bot never thinks for itself here: the assistant that calls these
   // tools is the brain. Each join hands Meet Bot both switches off, so it
   // answers nothing on its own; it speaks only the lines `say` gives it.
@@ -133,7 +142,8 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
       emit({ type: 'meeting.error', meeting_id: m.meeting_id, data: { text: 'The bot could not leave the room; call end_meeting again.' } });
       return kept;
     }
-    try { await bot.transcribe(sessionId, true); }
+    const listen = cfg.alwaysTranscribe !== false;
+    try { if (listen) await bot.transcribe(sessionId, true); }
     catch (e) {
       // The bot sits in the room, but no meeting holds its seat yet. Leave,
       // so the next try (the clock's next tick) does not seat it twice.
@@ -149,13 +159,14 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
       return kept;
     }
     const updated = holdSeat(m.meeting_id, {
-      state: 'live', session_id: sessionId, transcribing: true, muted: false, reseat: false,
+      state: 'live', session_id: sessionId, transcribing: listen, muted: !listen, reseat: false,
       started_at: new Date().toISOString(), ended_at: null, transcript: null,
     });
     // Each join hands Meet Bot its switches again, so a restarted app is
     // still quiet on its own and speaks only what `say` hands it.
     await applyVoice();
-    if (captions) await captions.start(updated);
+    if (captions && listen) await captions.start(updated);
+    await runHooks('joined', updated);
     return updated;
   }
 
@@ -233,6 +244,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     let text = scrub(m.transcript || '', secrets());
     try { text = scrub(await bot.transcript(m.session_id), secrets()); } catch (e) { /* keep the last copy */ }
     transcript.ingestCaption(m.meeting_id, text, ourNames());
+    await runHooks('leaving', m);
     // Any other failure keeps the meeting live, so a retry can still reach it.
     await bot.leave(m.session_id).catch((e) => { if (!GONE_RE.test((e && e.message) || '')) throw e; });
     if (bot.queue && typeof bot.queue.leave === 'function') bot.queue.leave(m.meeting_id);
@@ -379,6 +391,6 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     secret, secrets, ok, fail, emit, guarded, need, needLive,
     enter, enterByHand, joinByLink, rememberJoin, depart, stopJoin, holdSeat, holdPhase,
     counts, thinkingOf, lastHumanAt, ourNames, nameIn, control, orderView, ensureMeeting, instructionsFor,
-    applyVoice, voiceState: () => ({ ...VOICE, handed: !!(handed && handed.applied), gap: handed && !handed.applied ? handed.gap : null }),
+    hooks, applyVoice, voiceState: () => ({ ...VOICE, handed: !!(handed && handed.applied), gap: handed && !handed.applied ? handed.gap : null }),
   };
 }

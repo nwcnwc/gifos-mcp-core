@@ -41,6 +41,8 @@ export function loadConfig(env = process.env) {
     shotsDir: String(env.GIFOS_MCP_SHOTS || '').trim(),
     timeoutMs: Number(env.GIFOS_TIMEOUT_MS) > 0 ? Number(env.GIFOS_TIMEOUT_MS) : 120000,
     prewarm: env.GIFOS_MCP_LAZY !== '1',
+    // Every join turns captions on unless GIFOS_ALWAYS_TRANSCRIBE=0.
+    alwaysTranscribe: env.GIFOS_ALWAYS_TRANSCRIBE !== '0',
     debug: env.GIFOS_MCP_DEBUG === '1',
     maxMeetings: positiveInt(env.GIFOS_MAX_MEETINGS, 4, 'GIFOS_MAX_MEETINGS'),
     capacityNear: nearCount(env),

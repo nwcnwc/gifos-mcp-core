@@ -1,6 +1,6 @@
 {
   "name": "gifos-mcp-core",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Shared core of the GifOS MCP servers (gifos-meet-mcp, gifos-broadcast-mcp): the headless GifOS Meeting Bot, transcripts, Kokoro speech, room links and invite details. Self-run only.",
   "license": "UNLICENSED",
   "type": "module",
@@ -19,7 +19,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node test/unit/run.js test/unit/browser.test.js test/unit/profile.test.js test/unit/config.test.js test/unit/links.test.js test/unit/invite.test.js test/unit/shared-tools.test.js test/unit/providers.test.js test/unit/kokoro.test.js test/unit/kokoro-audio.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/store-listing.test.js test/unit/instructions.test.js test/unit/live-chat.test.js test/unit/tool-text.test.js test/unit/live-findings.test.js test/unit/startup.test.js"
+    "test": "node test/unit/run.js test/unit/browser.test.js test/unit/profile.test.js test/unit/config.test.js test/unit/links.test.js test/unit/invite.test.js test/unit/shared-tools.test.js test/unit/providers.test.js test/unit/kokoro.test.js test/unit/kokoro-audio.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/store-listing.test.js test/unit/instructions.test.js test/unit/live-chat.test.js test/unit/tool-text.test.js test/unit/live-findings.test.js test/unit/startup.test.js test/unit/recording.test.js"
   },
   "keywords": [
     "mcp",
