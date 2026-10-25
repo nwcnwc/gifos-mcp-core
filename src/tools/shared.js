@@ -30,6 +30,27 @@ export const instructionsField = z.string().max(INSTRUCTIONS_MAX).optional().des
 
 const lineKinds = z.array(z.enum(['speech', 'chat', 'spoken'])).optional().describe('Which lines to return: speech (someone in the room), chat (a chat post), spoken (a line this bot said). Omit for all three.');
 
+// The bot's own spoken lines stay in the transcript, labelled so they are
+// never mistaken for someone in the room: "<name> (bot): words".
+export function labelBotLines(text, names) {
+  const ours = (names || []).map((n) => String(n || '').trim()).filter(Boolean);
+  if (!text || !ours.length) return text;
+  return String(text).split('\n').map((line) => {
+    for (const n of ours) {
+      if (line.startsWith(n + ': ')) return n + ' (bot): ' + line.slice(n.length + 2);
+    }
+    return line;
+  }).join('\n');
+}
+
+// The banner GifOS shows when this network blocks the direct connections a
+// meeting needs: nobody outside sees or hears the bot. '' when there is none.
+async function networkWarningOf(bot, m) {
+  if (m.state !== 'live' || !m.session_id || typeof bot.networkWarning !== 'function') return '';
+  try { return String((await bot.networkWarning(m.session_id)) || ''); } catch (e) { return ''; }
+}
+const NETWORK_NOTE = ' The bot is in the room, but people on other networks cannot see or hear it, and it cannot hear them.';
+
 export function registerSharedTools(server, ctx, { name, version }) {
   const meetingId = meetingIdFor(name);
   // The tool that makes a link on this server (schedule_meeting names it).
@@ -38,6 +59,10 @@ export function registerSharedTools(server, ctx, { name, version }) {
     cfg, meetings, bot, transcript, schedule, events, clock, secret, secrets, ok, fail, emit, guarded, need, needLive,
     holdSeat, depart, stopJoin, counts, thinkingOf, ourNames, nameIn, orderView, ensureMeeting, instructionsFor,
   } = ctx;
+  const warned = async (m) => {
+    const w = await networkWarningOf(bot, m);
+    return w ? { warning: w + NETWORK_NOTE } : {};
+  };
   server.registerTool('mute', {
     title: 'Mute the bot (stop listening)',
     description: 'Stops captions for this meeting. This tool only stops transcription.',
@@ -73,7 +98,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('get_transcript', {
     title: 'Get the meeting transcript',
-    description: 'Returns the transcript as plain text, one "speaker: words" line per caption. Works while the meeting is live and after end_meeting.',
+    description: 'Returns the transcript as plain text, one "speaker: words" line per caption. Lines the bot itself spoke (say) are kept and labelled "<bot name> (bot): words". Works while the meeting is live and after end_meeting.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = need(meeting_id);
@@ -81,9 +106,9 @@ export function registerSharedTools(server, ctx, { name, version }) {
       const text = scrub(await bot.transcript(m.session_id), secret);
       holdSeat(m.meeting_id, { transcript: text });
       transcript.ingestCaption(m.meeting_id, text, ourNames());
-      return ok(text || '(no transcript lines yet)');
+      return ok(labelBotLines(text, ourNames()) || '(no transcript lines yet)');
     }
-    if (m.transcript != null) return ok(m.transcript || '(the transcript is empty)');
+    if (m.transcript != null) return ok(labelBotLines(m.transcript, ourNames()) || '(the transcript is empty)');
     return fail('Meeting ' + meeting_id + ' has not started, so there is no transcript.');
   }));
 
@@ -278,6 +303,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       mic,
       camera,
       controls_gap,
+      ...(await warned(m)),
     }, instructionsFor(m)));
   }));
 
@@ -485,7 +511,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('meeting_status', {
     title: 'Status of one meeting',
-    description: 'One meeting, one object: phase, people, whether the bot is thinking, speaking, or listening, and line counts. No room password, admin password, bot password, or model key.',
+    description: 'One meeting, one object: phase, people, whether the bot is thinking, speaking, or listening, and line counts, plus instructions when the meeting has them and a warning when this network blocks the direct connections the meeting needs (then nobody else sees or hears the bot). No room password, admin password, bot password, or model key.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = need(meeting_id);
@@ -522,6 +548,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       last_error: '',
       started_at: m.started_at,
       ended_at: m.ended_at,
+      ...(await warned(m)),
       schedule_id: order ? order.schedule_id : '',
       start: order ? order.start : null,
       end: order ? order.end : null,
