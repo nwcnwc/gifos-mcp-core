@@ -57,7 +57,25 @@ export function meetingLink(gifosUrl, room, { relay, verifier, townHall } = {}) 
   if (verifier) h.set('av', verifier);
   if (townHall) h.set('th', '1');
   if (relay) h.set('relay', relay);
+  // A plain room (no host key, town hall or relay) has the clean link GifOS
+  // itself hands out; run.html#v=<room> only redirects there.
+  if (!verifier && !townHall && !relay) return base(gifosUrl) + '/meet/' + room;
   return base(gifosUrl) + '/run.html#' + h.toString();
+}
+
+// The host part of a link the bot may join: the configured GIFOS_URL, any
+// gifos.app host, or this computer (a local GifOS). Anything else is refused
+// at once instead of loading a stranger's page and waiting for a meeting.
+export function gifosHostAllowed(link, gifosUrl) {
+  let u;
+  try { u = new URL(String(link)); } catch (e) { return false; }
+  let own = '';
+  try { own = new URL(String(gifosUrl || '')).origin; } catch (e) { own = ''; }
+  if (own && u.origin === own) return true;
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  const h = u.hostname.toLowerCase();
+  if (u.protocol === 'https:' && (h === 'gifos.app' || h.endsWith('.gifos.app'))) return true;
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
 }
 
 // A broadcast link. The same link is the host's and the viewers': the host

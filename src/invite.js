@@ -67,13 +67,38 @@ export function parseWhen(text, timeZone) {
   const s = String(text || '').trim();
   if (!s) return null;
   if (/(Z|[+-]\d\d:?\d\d)$/i.test(s)) {
+    const p = /^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d)(?::(\d\d)(?:\.\d+)?)?)?/.exec(s);
+    if (p) realParts(s, +p[1], +p[2], +p[3], +(p[4] || 0), +(p[5] || 0), +(p[6] || 0));
     const ms = Date.parse(s);
     if (!Number.isFinite(ms)) throw new Error('Not a time: ' + JSON.stringify(s));
     return ms;
   }
   const m = /^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d)(?::(\d\d))?)?$/.exec(s);
   if (!m) throw new Error('Not a time: ' + JSON.stringify(s) + '. Use ISO, for example 2026-10-20T17:00 with a timezone.');
+  realParts(s, +m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
   return utcFromZoned(+m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), assertZone(timeZone || 'UTC'));
+}
+
+// 2026-13-45T99:00 is not a time. Without this check it rolls over into a
+// date months later.
+function realParts(s, y, mo, d, hh, mm, ss) {
+  const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  if (mo < 1 || mo > 12 || d < 1 || d > days || hh > 23 || mm > 59 || ss > 59) {
+    throw new Error('Not a time: ' + JSON.stringify(s) + ' (no such date or time of day).');
+  }
+}
+
+// A start this long ago is a typo or an old date, not a meeting now.
+export const PAST_GRACE_MS = 15 * 60 * 1000;
+
+// create_meeting and create_broadcast refuse a start that has already
+// passed (more than PAST_GRACE_MS ago). The invite carries start.iso.
+export function assertNotPast(invite, now = Date.now()) {
+  const iso = invite && invite.start && invite.start.iso;
+  if (!iso) return;
+  if (Date.parse(iso) < now - PAST_GRACE_MS) {
+    throw new Error('start ' + invite.start.local + ' (' + invite.start.timezone + ') is in the past. Give a future time, or leave start out for a meeting now.');
+  }
 }
 
 function when(ms, timeZone) {

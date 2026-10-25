@@ -70,11 +70,29 @@ const loads = new Map();
 
 export const KOKORO_HOST = 'https://huggingface.co';
 
+// q8 comes back corrupt on AVX-512 CPUs (see kokoroAudioCorrupt), and the
+// first line then waits for fp32 to download. Such a CPU starts on fp32.
+export function kokoroDtypeFor(cpuinfo) {
+  return /\bavx512f\b/.test(String(cpuinfo || '')) ? 'fp32' : KOKORO_DTYPE;
+}
+
+let hostKind = null;
+export function hostKokoroDtype() {
+  if (hostKind) return hostKind;
+  // GIFOS_KOKORO_DTYPE=q8|fp32 overrides the guess from the CPU.
+  const forced = String(process.env.GIFOS_KOKORO_DTYPE || '').trim().toLowerCase();
+  if (forced === 'q8' || forced === 'fp32') return (hostKind = forced);
+  let info = '';
+  try { info = fs.readFileSync('/proc/cpuinfo', 'utf8'); } catch (e) { info = ''; }
+  hostKind = kokoroDtypeFor(info);
+  return hostKind;
+}
+
 // host is a mirror of the Hugging Face layout (GIFOS_KOKORO_URL); empty means huggingface.co.
 export function installKokoro({ home, voice, host, dtype } = {}) {
   if (!home) throw new Error('Kokoro needs a directory to keep its weights.');
   const dir = path.join(home, 'kokoro');
-  const kind = dtype || KOKORO_DTYPE;
+  const kind = dtype || hostKokoroDtype();
   const key = dir + '\n' + kind;
   let pending = loads.get(key);
   if (!pending) {
