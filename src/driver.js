@@ -59,6 +59,17 @@ export async function sheetOrReady({ sheet, ready, timeoutMs = 8000, pollMs = 10
   }
 }
 
+// 'auto' (Whisper detects), or a language code. A bare code is widened to the
+// region GifOS lists for it (ru -> ru-RU); others pass through.
+const CC_REGION = { en: 'en-US', ru: 'ru-RU', uk: 'uk-UA', es: 'es-ES', pt: 'pt-BR', fr: 'fr-FR', de: 'de-DE', it: 'it-IT', pl: 'pl-PL', tr: 'tr-TR', zh: 'zh-CN', ja: 'ja-JP', ko: 'ko-KR', hi: 'hi-IN', ar: 'ar-SA' };
+export function captionLang(lang) {
+  const v = String(lang || '').trim();
+  if (!v || v.toLowerCase() === 'auto') return 'auto';
+  if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$/.test(v)) throw new Error('language must be auto or a language code such as ru or es-ES.');
+  const [a, b] = v.split('-');
+  return b ? a.toLowerCase() + '-' + b.toUpperCase() : (CC_REGION[a.toLowerCase()] || a.toLowerCase());
+}
+
 export const RECORDING_SLICE = 4 * 1024 * 1024;
 
 function recordingName(sessionId, rec) {
@@ -155,6 +166,10 @@ export class MeetingBotDriver {
     const picture = this.picture === undefined ? botPicture(this.cfg) : this.picture;
     if (picture) init.gifos_avatar = JSON.stringify(picture);
     if (this.cfg.relay) init.gifos_relay = this.cfg.relay;
+    // Captions language: Whisper detects it unless a join asks for one. The
+    // headless browser's own language (en-US) would make Whisper translate
+    // every other language into English.
+    init.gifos_cc_lang = captionLang(this.cfg.ccLang);
     const roles = hostRoles(this.cfg);
     if (roles.length) {
       await ctx.exposeBinding(HOST_BINDING, async (_source, role, payload) => {
@@ -417,6 +432,16 @@ export class MeetingBotDriver {
     const r = await this.call('join', link, password || '');
     await this.shot(this.bot.app, 'bot-joined.png');
     return r.id;
+  }
+
+  // Sets the captions language for the next join ('auto' or a code such as
+  // ru or es-ES). One browser holds one setting, so rooms joined at the
+  // same time share the latest.
+  async setCaptionLanguage(lang) {
+    await this.ensureStarted();
+    const v = captionLang(lang);
+    await this.bot.app.evaluate((v) => { try { localStorage.setItem('gifos_cc_lang', v); } catch (e) {} }, v);
+    return v;
   }
 
   async leave(sessionId) { await this.call('end', sessionId); }

@@ -43,6 +43,8 @@ export function loadConfig(env = process.env) {
     prewarm: env.GIFOS_MCP_LAZY !== '1',
     // Every join turns captions on unless GIFOS_ALWAYS_TRANSCRIBE=0.
     alwaysTranscribe: env.GIFOS_ALWAYS_TRANSCRIBE !== '0',
+    // Captions language default: auto (Whisper detects). GIFOS_CC_LANG=ru etc.
+    ccLang: String(env.GIFOS_CC_LANG || 'auto').trim() || 'auto',
     debug: env.GIFOS_MCP_DEBUG === '1',
     maxMeetings: positiveInt(env.GIFOS_MAX_MEETINGS, 4, 'GIFOS_MAX_MEETINGS'),
     capacityNear: nearCount(env),

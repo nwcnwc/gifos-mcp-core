@@ -596,7 +596,7 @@ export class WorkerPool {
   // worker process that dies mid-join took its browser with it, so the join
   // goes to the next worker, but only once: a room that kills every worker
   // it reaches should not take the whole pool down.
-  async join(link, password) {
+  async join(link, password, opts) {
     const tried = new Set();
     let err = null;
     let died = false;
@@ -609,7 +609,7 @@ export class WorkerPool {
         try { await w.ready(); } catch (e) { err = err || e; continue; }
         const child = w.child;
         let local;
-        try { local = await w.call('join', link, password || ''); }
+        try { if (opts && opts.language) await w.call('setCaptionLanguage', opts.language).catch((e) => log('captions language not set: ' + ((e && e.message) || e))); local = await w.call('join', link, password || ''); }
         catch (e) {
           if (this.closed || w.child === child) throw e;
           // The clock waits longer before it brings such a room back.

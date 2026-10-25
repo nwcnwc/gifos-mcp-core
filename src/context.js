@@ -129,7 +129,14 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   async function enterOnce(m, password, job) {
     await bot.ensureStarted();
     const roomPassword = password || schedule.passwordFor(m.room) || '';
-    const sessionId = await bot.join(plainLink(m.link, roomPassword), roomPassword);
+    const lang = m.language || cfg.ccLang || 'auto';
+    let sessionId;
+    if (typeof bot.setCaptionLanguage === 'function' && !bot.workers) {
+      await bot.setCaptionLanguage(lang);
+      sessionId = await bot.join(plainLink(m.link, roomPassword), roomPassword);
+    } else {
+      sessionId = await bot.join(plainLink(m.link, roomPassword), roomPassword, { language: lang });
+    }
     if (job.cancelled) {
       // Ended while the join was on its way. Leave the seat it just took.
       const stuck = await bot.leave(sessionId).then(() => null, (le) => (GONE_RE.test((le && le.message) || '') ? null : le));
@@ -345,7 +352,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   // A password, when given, is the room password guests type; it is kept on
   // the schedule for rejoins and never returned. instructions, when given,
   // are the owner's for this meeting; undefined leaves them as they are.
-  async function joinByLink(link, password, topic, instructions) {
+  async function joinByLink(link, password, topic, instructions, opts = {}) {
     const room = roomFromLink(link);
     if (!room) throw new Error('That is not a GifOS link (expected …/run.html#v=<room> or …/meet/<room>).');
     if (!gifosHostAllowed(link, cfg.gifosUrl)) {
@@ -380,6 +387,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     else if (m.link !== clean) meetings.update(m.meeting_id, { link: clean, topic: topic || m.topic });
     // A new join with none given is transcribe only, not a past meeting's.
     if ((given || '') !== (m.instructions || '')) meetings.update(m.meeting_id, { instructions: given || '' });
+    if (opts.language !== undefined) meetings.update(m.meeting_id, { language: opts.language });
     const joined = await enterByHand(meetings.get(m.meeting_id), password);
     if (password) rememberJoin(joined, password, topic, given);
     emit({ type: 'meeting.joined', meeting_id: joined.meeting_id, data: withInstructions({ topic: joined.topic, link: joined.link, state: 'live' }, instructionsFor(joined)) });
