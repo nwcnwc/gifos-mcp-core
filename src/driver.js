@@ -44,6 +44,21 @@ function silenceWav(file) {
   fs.writeFileSync(file, Buffer.concat([hdr, Buffer.alloc(n * 2)]));
 }
 
+// First launch shows the permission sheet; later launches go straight to the
+// app. Polls both and says which came first: 'sheet', 'ready' or 'timeout'.
+// 'ready' needs two looks in a row with no sheet, so a sheet drawn a beat
+// after the app is not missed.
+export async function sheetOrReady({ sheet, ready, timeoutMs = 8000, pollMs = 100, sleepFn = sleep, now = Date.now }) {
+  const end = now() + timeoutMs;
+  let readyRun = 0;
+  for (;;) {
+    if (await sheet()) return 'sheet';
+    if (await ready()) { if (++readyRun >= 2) return 'ready'; } else readyRun = 0;
+    if (now() >= end) return 'timeout';
+    await sleepFn(pollMs);
+  }
+}
+
 export class MeetingBotDriver {
   constructor(cfg, creds, kokoro, hooks) {
     this.cfg = cfg;
@@ -270,7 +285,15 @@ export class MeetingBotDriver {
     await app.waitForSelector('#appmount iframe', { timeout: this.cfg.timeoutMs });
     // First launch asks for the app's abilities. Meeting Bot needs Meet and Remote.
     const sheet = app.locator('.perm-box');
-    if (await sheet.waitFor({ timeout: 8000 }).then(() => true, () => false)) {
+    // A profile that already granted them shows no sheet: stop as soon as the
+    // app is up instead of waiting out the sheet's 8 s.
+    const botUp = async () => {
+      const h = await app.$('#appmount iframe').catch(() => null);
+      const f = h && await h.contentFrame().catch(() => null);
+      return !!(f && await f.evaluate(() => !!(window.MeetingBot && window.MeetingBot.version >= 1)).catch(() => false));
+    };
+    const seen = await sheetOrReady({ sheet: () => sheet.isVisible().catch(() => false), ready: botUp, timeoutMs: 8000 });
+    if (seen === 'sheet') {
       for (const cap of ['meet', 'remote']) {
         const box = sheet.locator('input[data-cap="' + cap + '"]');
         if (await box.count()) await box.check();
