@@ -18,12 +18,23 @@ test('the host key is derived the way GifOS derives it', async () => {
 test('links carry the room, the verifier and the options, never a password', async () => {
   const room = newRoom();
   const k = await hostKey(room, 'admin-pass-1');
+  const admin = meetingLink('https://gifos.app/', room, { verifier: k.verifier });
+  assert.equal(admin, 'https://gifos.app/meet/' + room + '/' + k.verifier);
+  assert.equal(roomFromLink(admin), room);
+  assert.equal(roomFromLink(admin + '/'), room);
+  assert.equal(admin.includes('admin-pass-1'), false);
+  assert.equal(admin.includes(k.seedHex), false);
   const m = meetingLink('https://gifos.app/', room, { verifier: k.verifier, relay: 'wss://relay.example.test' });
+  assert.match(m, /\/run\.html#/);
   assert.equal(roomFromLink(m), room);
   assert.equal(linkParams(m).get('av'), k.verifier);
   assert.equal(linkParams(m).get('relay'), 'wss://relay.example.test');
   assert.equal(m.includes('admin-pass-1'), false);
   assert.equal(m.includes(k.seedHex), false);
+  const th = meetingLink('https://gifos.app', room, { verifier: k.verifier, townHall: true });
+  assert.match(th, /\/run\.html#/);
+  assert.equal(linkParams(th).get('av'), k.verifier);
+  assert.equal(linkParams(th).get('th'), '1');
   assert.equal(linkParams(meetingLink('https://gifos.app', room, { townHall: true })).get('th'), '1');
   assert.equal(linkParams(meetingLink('https://gifos.app', room)).get('av'), null);
   const at = Date.parse('2026-10-25T15:00:00Z');

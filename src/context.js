@@ -354,7 +354,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   // are the owner's for this meeting; undefined leaves them as they are.
   async function joinByLink(link, password, topic, instructions, opts = {}) {
     const room = roomFromLink(link);
-    if (!room) throw new Error('That is not a GifOS link (expected …/run.html#v=<room> or …/meet/<room>).');
+    if (!room) throw new Error('That is not a GifOS link (expected …/run.html#v=<room> or …/meet/<room>[/<verifier>]).');
     if (!gifosHostAllowed(link, cfg.gifosUrl)) {
       let host = '';
       try { host = new URL(String(link)).host; } catch (e) { host = ''; }

@@ -83,6 +83,9 @@ test('rooms and links', () => {
   assert.equal(roomFromLink('https://gifos.app/run.html#v=abc-1&relay=x'), 'abc-1');
   assert.equal(roomFromLink('https://gifos.app/meet/Room42'), 'Room42');
   assert.equal(roomFromLink('https://gifos.app/meet/Room42/'), 'Room42');
+  assert.equal(roomFromLink('https://gifos.app/meet/Room42/3783bb03122c41d92d295bab'), 'Room42');
+  assert.equal(roomFromLink('https://gifos.app/meet/Room42/3783bb03122c41d92d295bab/'), 'Room42');
+  assert.equal(roomFromLink('https://gifos.app/cast/Room42/3783bb03122c41d92d295bab'), 'Room42');
   assert.equal(roomFromLink('https://gifos.app/index.html'), '');
   assert.equal(roomFromLink('javascript:alert(1)#v=abc'), '');
   assert.equal(roomFromLink('https://gifos.app/run.html#v=bad%20room'), '');

@@ -6,8 +6,9 @@
 //   seed     = PBKDF2-SHA256(host password, "gifos-admin:" + room, 310000 rounds, 32 bytes)
 //   key      = Ed25519 key pair from that seed
 //   verifier = first 24 hex characters of SHA-256(raw public key)
-// The link carries only the verifier (av=). The password and the seed never
-// leave this process and are never returned.
+// The link carries only the verifier (a /meet/<room>/<verifier> segment, or
+// av= when town hall or relay needs the hash form). The password and the
+// seed never leave this process and are never returned.
 import crypto from 'node:crypto';
 
 const ROOM_RE = /^[A-Za-z0-9-]{1,64}$/;
@@ -51,15 +52,18 @@ function base(gifosUrl) {
 }
 
 // A meeting link. verifier makes it a room the host runs (admin room).
+// 404.html routes /meet/<room> and /meet/<room>/<verifier> to
+// run.html#v=<room>[&av=<verifier>]. The hash form stays only when the link
+// needs th= or relay=, which that path does not carry.
 export function meetingLink(gifosUrl, room, { relay, verifier, townHall } = {}) {
+  if (!townHall && !relay) {
+    return base(gifosUrl) + '/meet/' + room + (verifier ? '/' + verifier : '');
+  }
   const h = new URLSearchParams();
   h.set('v', room);
   if (verifier) h.set('av', verifier);
   if (townHall) h.set('th', '1');
   if (relay) h.set('relay', relay);
-  // A plain room (no host key, town hall or relay) has the clean link GifOS
-  // itself hands out; run.html#v=<room> only redirects there.
-  if (!verifier && !townHall && !relay) return base(gifosUrl) + '/meet/' + room;
   return base(gifosUrl) + '/run.html#' + h.toString();
 }
 
@@ -94,12 +98,13 @@ export function broadcastLink(gifosUrl, room, { relay, verifier, startAt, visit,
   return base(gifosUrl) + '/run.html#' + h.toString();
 }
 
-// Accepts the links GifOS hands out: /run.html#v=<room>[&...] and /meet/<room>.
+// Accepts the links GifOS hands out: /run.html#v=<room>[&...], /meet/<room>,
+// and /meet/<room>/<verifier> (404.html maps that to #v=<room>&av=<verifier>).
 export function roomFromLink(link) {
   let u;
   try { u = new URL(String(link)); } catch (e) { return ''; }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
-  const pretty = /^\/(?:meet|cast)\/([A-Za-z0-9-]{1,64})\/?$/.exec(u.pathname);
+  const pretty = /^\/(?:meet|cast)\/([A-Za-z0-9-]{1,64})(?:\/([a-fA-F0-9]{16,64}))?\/?$/.exec(u.pathname);
   if (pretty) return pretty[1];
   const h = new URLSearchParams(u.hash.replace(/^#/, ''));
   const v = h.get('v') || '';
