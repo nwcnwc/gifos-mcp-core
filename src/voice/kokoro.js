@@ -30,13 +30,26 @@ export const KOKORO_FILES = Object.freeze({
 
 // q8 on an AVX-512 CPU has come back as NaN or peaks like 1.5e15. A real
 // waveform stays inside -1..1. Empty is not corrupt: there was nothing to say.
+// A sentence can peak a little past 1 (q8 1.21, fp32 1.04) and is fine once
+// clamped (kokoroClamp); only NaN or a peak beyond this bound is garbage.
+export const KOKORO_MAX_PEAK = 4;
 export function kokoroAudioCorrupt(samples) {
   if (!samples || typeof samples.length !== 'number') return true;
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i];
-    if (!Number.isFinite(s) || s > 1 || s < -1) return true;
+    if (!Number.isFinite(s) || s > KOKORO_MAX_PEAK || s < -KOKORO_MAX_PEAK) return true;
   }
   return false;
+}
+
+// Bring a slightly hot waveform inside -1..1 before it is encoded.
+export function kokoroClamp(samples) {
+  if (!samples) return samples;
+  for (let i = 0; i < samples.length; i++) {
+    if (samples[i] > 1) samples[i] = 1;
+    else if (samples[i] < -1) samples[i] = -1;
+  }
+  return samples;
 }
 
 // The SHA-256 a weights file must have, by its path inside the model.
@@ -405,6 +418,7 @@ async function load(dir, voice, host, dtype) {
         audio = await sayWith(await ensureFp32());
         if (kokoroAudioCorrupt(audio && audio.audio)) throw new Error('Kokoro produced corrupt audio.');
       }
+      kokoroClamp(audio.audio);
       return Buffer.from(audio.toWav());
     },
   };
