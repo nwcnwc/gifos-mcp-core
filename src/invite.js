@@ -125,7 +125,7 @@ export function meetingInvite({ title, link, start, end, timezone, description, 
   const roles = {
     host: (hostName ? hostName + ' runs' : 'The host runs') + ' the room with their own host password, which is never sent in an invite.',
     guests: townHall ? 'Guests watch and listen; the host brings people up to speak.' : 'Guests join muted with the camera off and turn them on when they want.',
-    notes: 'The meeting is written down while people speak; every screen shows 📝 Transcribing.',
+    notes: 'The meeting is written down while people speak; each screen shows 📝 Sending captions while its own voice is being written.',
   };
   const text = [
     name,
@@ -167,7 +167,7 @@ export function broadcastInvite({ title, link, start, end, timezone, description
     viewers: 'Viewers open the link to watch. Nobody needs an account, and a viewer\'s camera and microphone stay off. A viewer can raise a hand; the host can bring them on stage.',
     early: startMs != null ? 'Anyone who opens the link early sees when the ' + noun + ' starts, a countdown, and Add to calendar.' : '',
     after: 'Anyone who opens the link after it ends sees "The stage is clear."',
-    notes: 'The ' + noun + ' is written down while people speak; every screen shows 📝 Transcribing.',
+    notes: 'The ' + noun + ' is written down while people speak; each screen shows 📝 Sending captions while its own voice is being written.',
   };
   const text = [
     name,

@@ -53,7 +53,7 @@ test('a meeting invite has every detail an invite needs, as fields and as text',
   assert.equal(inv.admit.how, 'password');
   assert.equal(inv.admit.room_password, ROOM);
   assert.match(inv.roles.host, /Ada/);
-  assert.match(inv.roles.notes, /Transcribing/);
+  assert.match(inv.roles.notes, /Sending captions/);
   for (const piece of ['Budget review', '2026-10-20 17:00', 'America/Los_Angeles', 'Q4 numbers.', link, ROOM]) assert.ok(inv.text.includes(piece), piece);
   assert.equal(urlsContain(inv.text, ROOM), false);
   assert.equal(inv.calendar.location, link);
