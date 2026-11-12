@@ -111,20 +111,20 @@ const DEFAULT_LENGTH_MS = 60 * 60 * 1000;
 
 // Everything an invite needs, as fields and as ready-to-send text, for a
 // meeting. The admin (host) password is never an input here.
-export function meetingInvite({ title, link, start, end, timezone, description, roomPassword, hostName, townHall }) {
+export function meetingInvite({ title, link, start, end, timezone, description, roomPassword, hostName }) {
   const zone = assertZone(timezone || 'UTC');
   const startMs = parseWhen(start, zone);
   let endMs = parseWhen(end, zone);
   if (startMs != null && endMs == null) endMs = startMs + DEFAULT_LENGTH_MS;
   if (startMs != null && endMs != null && endMs <= startMs) throw new Error('end must be after start.');
   const url = plainLink(link, roomPassword);
-  const name = String(title || (townHall ? 'GifOS town hall' : 'GifOS meeting'));
+  const name = String(title || 'GifOS meeting');
   const admit = roomPassword
     ? { how: 'password', note: 'Guests open the link and type the room password. It is not part of the link.', room_password: String(roomPassword) }
     : { how: 'link', note: 'Anyone with the link can join. Share it only with the people you invite.' };
   const roles = {
     host: (hostName ? hostName + ' runs' : 'The host runs') + ' the room with their own host password, which is never sent in an invite.',
-    guests: townHall ? 'Guests watch and listen; the host brings people up to speak.' : 'Guests join muted with the camera off and turn them on when they want.',
+    guests: 'Guests join muted with the camera off and turn them on when they want.',
     notes: 'The meeting is written down while people speak; each screen shows 📝 Sending captions while its own voice is being written.',
   };
   const text = [
@@ -138,7 +138,7 @@ export function meetingInvite({ title, link, start, end, timezone, description, 
     roles.notes,
   ].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim();
   return {
-    kind: townHall ? 'town_hall' : 'meeting',
+    kind: 'meeting',
     title: name,
     start: when(startMs, zone),
     end: when(endMs, zone),
@@ -154,14 +154,14 @@ export function meetingInvite({ title, link, start, end, timezone, description, 
 
 // The same for a broadcast: viewers watch the link, the host goes live
 // from it with the host password.
-export function broadcastInvite({ title, link, start, end, timezone, description, visit, stream, hostName }) {
+export function broadcastInvite({ title, link, start, end, timezone, description, roomPassword, hostName }) {
   const zone = assertZone(timezone || 'UTC');
   const startMs = parseWhen(start, zone);
   let endMs = parseWhen(end, zone);
   if (startMs != null && endMs == null) endMs = startMs + DEFAULT_LENGTH_MS;
   if (startMs != null && endMs != null && endMs <= startMs) throw new Error('end must be after start.');
-  const noun = stream ? 'stream' : 'service';
-  const name = String(title || (stream ? 'GifOS stream' : 'GifOS broadcast'));
+  const noun = 'broadcast';
+  const name = String(title || 'GifOS broadcast');
   const roles = {
     host: (hostName ? hostName + ' goes' : 'The host goes') + ' live from the same link with the host password, which is never sent in an invite.',
     viewers: 'Viewers open the link to watch. Nobody needs an account, and a viewer\'s camera and microphone stay off. A viewer can raise a hand; the host can bring them on stage.',
@@ -175,20 +175,20 @@ export function broadcastInvite({ title, link, start, end, timezone, description
     description ? '\n' + String(description) : '',
     '',
     'Watch: ' + link,
-    visit ? 'Visit: ' + visit : '',
     '',
-    'No account or password needed to watch.',
+    roomPassword ? 'Room password (type it yourself; it is not part of the link): ' + roomPassword : 'No account or password needed to watch.',
   ].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim();
   return {
-    kind: stream ? 'stream' : 'broadcast',
+    kind: 'broadcast',
     title: name,
     start: when(startMs, zone),
     end: when(endMs, zone),
     timezone: zone,
     watch_url: link,
-    visit_url: visit || '',
     description: description ? String(description) : '',
-    admit: { how: 'link', note: 'Anyone with the link can watch. Only the host password can go live.' },
+    admit: roomPassword
+      ? { how: 'password', note: 'Viewers open the link and type the room password. Only the host password can go live.', room_password: String(roomPassword) }
+      : { how: 'link', note: 'Anyone with the link can watch. Only the host password can go live.' },
     roles,
     text,
     calendar: { summary: name, description: text, location: link, url: link },

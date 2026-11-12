@@ -681,6 +681,7 @@ export class WorkerPool {
   async startRecording(id) { const r = this.route(id); return r.w.call('startRecording', r.local); }
   async stopRecording(id) { const r = this.route(id); return r.w.call('stopRecording', r.local); }
   async getRecording(id, opts) { const r = this.route(id); return r.w.call('getRecording', r.local, opts || {}); }
+  async room(id, op, args) { const r = this.route(id); return r.w.call('room', r.local, String(op), args || {}); }
 
   async list() {
     const ready = this.workers.filter((w) => w.state === 'ready');

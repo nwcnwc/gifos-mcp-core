@@ -17,6 +17,11 @@ pinned to an exact commit. Everything runs on your own computer; there is no hos
   tools for transcripts (`get_transcript`, `tail_transcript`, `tail_lines`, `wait_lines`), speaking and chat
   (`say`, `send_chat`, `share_content`), how the bot looks (`set_bot_profile`), the room (`get_meeting_state`, `snapshot`, `mute`, `unmute`,
   `leave_meeting`, `end_meeting`), the schedule and status.
+- **GifOS 0.9.26 meeting tools** (`src/room.js`, `src/tools/room.js`, `registerRoomTools`): the shared
+  agenda (`set_agenda`, `next_agenda_item`, `get_agenda`), apps in the meeting (`list_apps`, `run_app`,
+  `stop_app`, `take_turns`), the stage (`stage`) and `sign_in_as_host`. Meeting Bot's control API has no
+  methods for these yet, so they act in the bot's own meeting frame with that seat's rights (a guest cannot do
+  what only a host may). On an older GifOS site they answer that the site does not have them yet.
 - **No text model.** The assistant calling the tools is the brain. Meet Bot is handed
   `{ respond_to_command: false, speak: false }` on every join, so it answers nothing on its own; it speaks
   exactly the lines `say` gives it. No model URL, model name or API key is read anywhere.

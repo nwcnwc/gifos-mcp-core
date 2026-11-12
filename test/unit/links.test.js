@@ -3,7 +3,7 @@
 // vectors below were checked against GifOS's own derivation in a browser.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hostKey, meetingLink, broadcastLink, roomFromLink, linkParams, cleanVisit, newRoom } from '../../src/links.js';
+import { hostKey, meetingLink, broadcastLink, roomFromLink, linkParams, cleanVisit, newRoom, isBroadcastLink, verifierFromLink } from '../../src/links.js';
 
 test('the host key is derived the way GifOS derives it', async () => {
   const a = await hostKey('abc123room', 'admin-pass-1');
@@ -31,19 +31,25 @@ test('links carry the room, the verifier and the options, never a password', asy
   assert.equal(linkParams(m).get('relay'), 'wss://relay.example.test');
   assert.equal(m.includes('admin-pass-1'), false);
   assert.equal(m.includes(k.seedHex), false);
-  const th = meetingLink('https://gifos.app', room, { verifier: k.verifier, townHall: true });
-  assert.match(th, /\/run\.html#/);
-  assert.equal(linkParams(th).get('av'), k.verifier);
-  assert.equal(linkParams(th).get('th'), '1');
-  assert.equal(linkParams(meetingLink('https://gifos.app', room, { townHall: true })).get('th'), '1');
+  // GifOS 0.9.26 has no town hall: an old townHall option changes nothing.
+  assert.equal(meetingLink('https://gifos.app', room, { verifier: k.verifier, townHall: true }), admin);
   assert.equal(linkParams(meetingLink('https://gifos.app', room)).get('av'), null);
   const at = Date.parse('2026-10-25T15:00:00Z');
   const b = broadcastLink('https://gifos.app', room, { verifier: k.verifier, startAt: at, visit: 'https://example.org/give', stream: true });
   const p = linkParams(b);
   assert.equal(p.get('bc'), '1');
-  assert.equal(p.get('st'), '1');
   assert.equal(p.get('at'), String(at / 1000));
-  assert.equal(p.get('visit'), 'https://example.org/give');
+  assert.equal(p.get('st'), null, 'no Stream to friends in 0.9.26');
+  assert.equal(p.get('visit'), null, 'no Visit link in 0.9.26');
+  assert.equal(isBroadcastLink(b), true);
+  const cast = broadcastLink('https://gifos.app', room, { verifier: k.verifier });
+  assert.equal(cast, 'https://gifos.app/cast/' + room + '/' + k.verifier);
+  assert.equal(isBroadcastLink(cast), true);
+  assert.equal(roomFromLink(cast), room);
+  assert.equal(verifierFromLink(cast), k.verifier);
+  assert.equal(verifierFromLink(b), k.verifier);
+  assert.equal(isBroadcastLink(admin), false);
+  assert.equal(isBroadcastLink('https://gifos.app/cast/' + room), false);
   assert.throws(() => broadcastLink('https://gifos.app', room, {}), /host key/);
 });
 

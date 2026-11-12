@@ -17,6 +17,7 @@ import { bridgeScript, hostRoles, HOST_BINDING, installPlan } from './voice/prov
 import { packHostResult, serveHost } from './voice/host.js';
 import { installKokoro } from './voice/kokoro.js';
 import { SpeechQueue } from './voice/queue.js';
+import { ROOM_OPS, TURNS_OPS, OLD_SITE, roomPageOp, turnsPageOp } from './room.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -68,6 +69,18 @@ export function captionLang(lang) {
   if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$/.test(v)) throw new Error('language must be auto or a language code such as ru or es-ES.');
   const [a, b] = v.split('-');
   return b ? a.toLowerCase() + '-' + b.toUpperCase() : (CC_REGION[a.toLowerCase()] || a.toLowerCase());
+}
+
+// {"gifos_x": "v", ...} from GIFOS_MCP_PAGE_STORAGE: only gifos_ keys and
+// string values; anything else is ignored.
+export function pageStorage(raw) {
+  if (!raw) return {};
+  let o;
+  try { o = JSON.parse(String(raw)); } catch (e) { log('GIFOS_MCP_PAGE_STORAGE is not JSON; ignored'); return {}; }
+  const out = {};
+  if (!o || typeof o !== 'object') return out;
+  for (const [k, v] of Object.entries(o)) if (/^gifos[_-][A-Za-z0-9_.-]{1,60}$/.test(k) && typeof v === 'string' && v.length <= 2000) out[k] = v;
+  return out;
 }
 
 export const RECORDING_SLICE = 4 * 1024 * 1024;
@@ -166,6 +179,9 @@ export class MeetingBotDriver {
     const picture = this.picture === undefined ? botPicture(this.cfg) : this.picture;
     if (picture) init.gifos_avatar = JSON.stringify(picture);
     if (this.cfg.relay) init.gifos_relay = this.cfg.relay;
+    // GIFOS_MCP_PAGE_STORAGE (testing): extra gifos_* page settings, such as a
+    // test TURN credential service (gifos_turn_worker) on a private network.
+    Object.assign(init, pageStorage(process.env.GIFOS_MCP_PAGE_STORAGE));
     // Captions language: Whisper detects it unless a join asks for one. The
     // headless browser's own language (en-US) would make Whisper translate
     // every other language into English.
@@ -214,6 +230,10 @@ export class MeetingBotDriver {
 
   async desktop(ctx) {
     const page = ctx.pages()[0] || await ctx.newPage();
+    if (this.cfg.debug) {
+      page.on('console', (m) => log('[desk console] ' + m.text().slice(0, 300)));
+      page.on('framenavigated', (f) => { if (f === page.mainFrame()) log('[desk] ' + f.url()); });
+    }
     await page.goto(this.cfg.gifosUrl + '/index.html', { waitUntil: 'domcontentloaded', timeout: this.cfg.timeoutMs });
     await page.waitForFunction(() => window.GifOS && GifOS.store && GifOS.store.allFiles, null, { timeout: this.cfg.timeoutMs });
     await page.waitForSelector('.icon', { timeout: this.cfg.timeoutMs });
@@ -255,7 +275,22 @@ export class MeetingBotDriver {
       return have;
     }
     // 0.9.24+ returns to /versions/<ver>/ after an install; older builds return to index.html.
-    await desk.waitForURL(/index\.html|\/versions\/[^/]+\/(?:[?#]|$)/, { timeout: this.cfg.timeoutMs }).catch(() => {
+    await desk.waitForURL(/index\.html|\/versions\/[^/]+\/(?:[?#]|$)/, { timeout: this.cfg.timeoutMs }).catch(async () => {
+      await this.shot(desk, 'store-stuck-' + slug + '.png');
+      if (this.cfg.debug) {
+        const why = await desk.evaluate(async (slug) => {
+          const out = {};
+          try {
+            const app = await (await fetch('/apps/' + slug + '/app.json')).json();
+            const bytes = new Uint8Array(await (await fetch(app.gif)).arrayBuffer());
+            out.n = bytes.length; out.want = app.bytes;
+            try { const a = await GifOS.gif.decode(bytes); out.app = a ? (GifOS.gif.readManifest(a) || {}).appId : null; } catch (e) { out.decodeErr = String((e && e.stack) || e).slice(0, 400); }
+          } catch (e) { out.err = String(e).slice(0, 300); }
+          try { const est = await navigator.storage.estimate(); out.quota = est.quota; out.usage = est.usage; } catch (e) { /* none */ }
+          return out;
+        }, slug).catch((e) => ({ evalErr: String(e).slice(0, 200) }));
+        log('store stuck: ' + JSON.stringify(why));
+      }
       throw new Error('Installing "' + slug + '" from the GifOS store at ' + this.cfg.gifosUrl + ' did not return to the desktop (still at ' + desk.url() + ').');
     });
     await desk.waitForSelector('.icon', { timeout: this.cfg.timeoutMs });
@@ -444,7 +479,48 @@ export class MeetingBotDriver {
     return v;
   }
 
-  async leave(sessionId) { await this.call('end', sessionId); }
+  async leave(sessionId) {
+    await this.call('end', sessionId);
+    await this.forgetHostKeys();
+  }
+
+  // A host key the bot took with sign_in_as_host stays in its browser only
+  // while it is in a meeting: once no meeting page is open, it is removed.
+  async forgetHostKeys() {
+    if (!this.bot || !this.bot.app) return;
+    await this.bot.app.evaluate(() => {
+      if (document.querySelector('iframe[data-gifos-meet]')) return;
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf('gifos_vadm_') === 0) localStorage.removeItem(k);
+      }
+    }).catch(() => {});
+  }
+
+  // The agenda, apps, Take Turns, the stage and host sign-in (src/room.js),
+  // reached in the bot's own meeting page. Throws the page's reason.
+  async room(sessionId, op, args) {
+    if (!ROOM_OPS.includes(op) && !TURNS_OPS.includes(op)) throw new Error('Unknown room op.');
+    await this.ensureStarted();
+    const r = TURNS_OPS.includes(op)
+      ? await this.turnsOp(sessionId, op, args || {})
+      : await this.bot.app.evaluate(roomPageOp, { id: String(sessionId), op, args: args || {}, oldSite: OLD_SITE, waitMs: 15000 });
+    if (!r || !r.ok) throw new Error((r && r.error) || 'The meeting page did not answer.');
+    return r.v;
+  }
+
+  // Take Turns runs in a sandboxed frame inside the meeting page; it is
+  // reached as a frame, not through the page's window.
+  async turnsOp(sessionId, op, args) {
+    const sel = 'iframe[data-gifos-meet="' + String(sessionId).replace(/["\\]/g, '') + '"]';
+    const el = await this.bot.app.$(sel);
+    if (!el) return { ok: false, error: 'The bot is not in that meeting any more.' };
+    const sess = await el.contentFrame();
+    const appEl = sess ? await sess.$('#appmount iframe') : null;
+    const appFrame = appEl ? await appEl.contentFrame() : null;
+    if (!appFrame) return { ok: false, error: 'No app is running in this meeting. Start Take Turns with take_turns action start.' };
+    return appFrame.evaluate(turnsPageOp, { op, args });
+  }
   async transcribe(sessionId, on) { await this.call('transcribe', sessionId, !!on); }
   async say(sessionId, text) { await this.call('say', sessionId, String(text)); }
   async people(sessionId) { return this.call('people', sessionId); }
@@ -549,7 +625,14 @@ export class MeetingBotDriver {
     return this.whenMethod(
       () => typeof (window.MeetingBot && window.MeetingBot.setCamera) === 'function',
       CAMERA_GAP,
-      () => this.bot.frame.evaluate(({ id, on }) => window.MeetingBot.setCamera(id, on), { id: sessionId, on: !!on }),
+      // GifOS 0.9.26 turns a camera on only with a blur choice, which
+      // MeetingBot.setCamera (0.9.25) does not pass; then ask the meeting
+      // API in the app frame directly, with No blur (the bot's own picture).
+      () => this.bot.frame.evaluate(({ id, on }) => window.MeetingBot.setCamera(id, on).catch((e) => {
+        const g = window.gifos && window.gifos.meet;
+        if (on && g && typeof g.setCamera === 'function' && /blur/i.test(String((e && e.message) || e))) return g.setCamera(id, true, 0);
+        throw e;
+      }), { id: sessionId, on: !!on }),
     );
   }
 
@@ -655,11 +738,21 @@ export class MeetingBotDriver {
       } catch (e) { out.error = String(e.message || e); }
       // GIFOS_MCP_DEBUG=1: what each meeting page says about its captions.
       if (this.cfg.debug) {
+        await this.bot.app.evaluate(async () => {
+          for (const f of Array.from(document.querySelectorAll('iframe[data-gifos-meet]'))) {
+            try {
+              const g = f.contentWindow.__gifosVideo;
+              const ts = g && typeof g.turnState === 'function' ? g.turnState() : null;
+              const paths = g && typeof g.turnPathsForTest === 'function' ? await g.turnPathsForTest() : null;
+              f.__mcpTurn = ts || paths ? { directPath: ts ? ts.directPath : null, links: ts ? ts.links : null, paths } : null;
+            } catch (e) { f.__mcpTurn = { error: String(e).slice(0, 200) }; }
+          }
+        }).catch(() => {});
         out.debug_sessions = await this.bot.app.evaluate(() => Array.from(document.querySelectorAll('iframe[data-gifos-meet]')).map((f) => {
           try {
             const g = f.contentWindow.__gifosVideo;
             return { id: f.getAttribute('data-gifos-meet'), captions: g && g.whisperForTest ? g.whisperForTest() : null,
-              status: (f.contentDocument.querySelector('#status') || {}).textContent || '' };
+              status: (f.contentDocument.querySelector('#status') || {}).textContent || '', turn: g ? f.__mcpTurn || null : null };
           } catch (e) { return { id: f.getAttribute('data-gifos-meet'), error: String(e) }; }
         })).catch((e) => String(e));
       }

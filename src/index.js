@@ -2,10 +2,12 @@
 export { runMain, createRuntime, ENV_HELP } from './main.js';
 export { createServer } from './server.js';
 export { createContext, GONE_RE } from './context.js';
+export { registerRoomTools } from './tools/room.js';
+export { ROOM_OPS, TURNS_OPS, OLD_SITE, roomPageOp, turnsPageOp } from './room.js';
 export { registerSharedTools, meetingId, meetingIdFor, instructionsField } from './tools/shared.js';
 export { loadConfig, botCredentials, DEFAULT_GIFOS_URL } from './config.js';
 export { MeetingStore, publicView } from './meetings.js';
-export { newRoom, hostKey, hostSeed, verifierOfSeed, meetingLink, broadcastLink, roomFromLink, linkParams, cleanVisit, gifosHostAllowed } from './links.js';
+export { newRoom, hostKey, hostSeed, verifierOfSeed, meetingLink, broadcastLink, roomFromLink, linkParams, cleanVisit, gifosHostAllowed, isBroadcastLink, verifierFromLink } from './links.js';
 export { plainLink, formatInvite, meetingInvite, broadcastInvite, parseWhen, assertNotPast, PAST_GRACE_MS, PASSWORD_LINK_NOTE } from './invite.js';
 export { ScheduleStore, publicOrder, localStamp, assertZone, cleanInstructions, withInstructions, INSTRUCTIONS_MAX } from './schedule.js';
 export { EventLog } from './events.js';

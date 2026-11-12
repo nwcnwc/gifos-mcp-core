@@ -63,20 +63,24 @@ test('a meeting invite has every detail an invite needs, as fields and as text',
   assert.equal(open.end.iso, '2026-10-20T10:00:00.000Z', 'an hour by default');
   assert.equal(open.timezone, 'UTC');
   assert.equal(meetingInvite({ title: 'Later', link: 'https://gifos.app/run.html#v=abc' }).start, null);
-  assert.equal(meetingInvite({ link: 'https://gifos.app/run.html#v=abc', townHall: true }).kind, 'town_hall');
+  assert.equal(meetingInvite({ link: 'https://gifos.app/run.html#v=abc', townHall: true }).kind, 'meeting', 'GifOS 0.9.26 has no town hall');
   assert.throws(() => meetingInvite({ link: 'https://gifos.app/run.html#v=abc', start: '2026-10-20T10:00Z', end: '2026-10-20T09:00Z' }), /end must be after start/);
 });
 
-test('a broadcast invite says how to watch, when it starts, and where Visit goes', () => {
+test('a broadcast invite says how to watch, when it starts, and the room password when there is one', () => {
   const link = 'https://gifos.app/run.html#v=svc&av=3783bb03122c41d92d295bab&bc=1&at=1792540800';
-  const inv = broadcastInvite({ title: 'Sunday service', link, start: '2026-10-25T10:00', timezone: 'America/Chicago', visit: 'https://example.org/give', description: 'Live from the hall.' });
+  const inv = broadcastInvite({ title: 'Sunday service', link, start: '2026-10-25T10:00', timezone: 'America/Chicago', description: 'Live from the hall.' });
   assert.equal(inv.kind, 'broadcast');
   assert.equal(inv.watch_url, link);
-  assert.equal(inv.visit_url, 'https://example.org/give');
+  assert.equal('visit_url' in inv, false, 'GifOS 0.9.26 has no Visit link');
   assert.equal(inv.start.local, '2026-10-25 10:00');
   assert.match(inv.roles.early, /countdown/);
   assert.match(inv.roles.after, /The stage is clear/);
   assert.match(inv.text, /Watch: /);
-  assert.match(inv.text, /Visit: https:\/\/example.org\/give/);
-  assert.equal(broadcastInvite({ link, stream: true }).kind, 'stream');
+  assert.doesNotMatch(inv.text, /Visit/);
+  assert.match(inv.text, /No account or password needed/);
+  const pw = broadcastInvite({ link, roomPassword: 'pew-42' });
+  assert.equal(pw.admit.how, 'password');
+  assert.match(pw.text, /Room password .*pew-42/);
+  assert.equal(pw.watch_url.includes('pew-42'), false);
 });
