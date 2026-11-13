@@ -14,7 +14,7 @@ export const ROOM_OPS = [
   'app.list', 'app.run', 'app.stop', 'app.state',
   'stage.get', 'stage.set', 'stage.grant',
   'host.signin', 'host.state',
-  'guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all', 'guard.vote_out',
+  'guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all',
 ];
 
 export const OLD_SITE = 'This GifOS site does not have that yet (it needs GifOS 0.9.26 or newer).';
@@ -160,7 +160,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         return { ok: true, v: { bot_is_host: true } };
       }
       // ---- guard: hold a room as its admin (src/guard.js) ----
-      // What the bot's seat knows about the room's admin, password, people and votes. An open room's admin is the
+      // What the bot's seat knows about the room's admin, password and people. An open room's admin is the
       // subscriber who captured it ("Make me admin"); every page shows the plain note #capnote while a capture holds,
       // and the password button is the captor's alone (disabled for everyone else).
       case 'guard.state': {
@@ -183,7 +183,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
           subscription: mt ? { held: !!mt.held, moved: mt.moved || null, tier: mt.tier || null, paid: !!mt.paid } : null,
           subs_on: !!(M && has(M.enabled) && M.enabled()),
           blur_all: ba ? { offered: vis(ba), on: ba.classList.contains('on') } : null,
-          people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '', voted_out: has(g.kickedForTest) ? !!g.kickedForTest(pid) : false })),
+          people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '' })),
         } };
       }
       // Load a subscription file (the GifOS credentials GIF) into the bot's browser, so its seat joins with that plan.
@@ -220,13 +220,6 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         if (!b || b.style.display === 'none') return { ok: false, error: 'The page does not offer Blur guests to the bot here (it is an admin-room admin control).' };
         if (b.classList.contains('on') !== !!a.on) b.click();
         return { ok: true, v: { on: b.classList.contains('on') } };
-      }
-      // Add the bot's own standing vote to vote someone out of the room (the room's vote-off; L27).
-      case 'guard.vote_out': {
-        if (!has(g.voteOffForTest) || !has(g.nameOf)) return { ok: false, error: oldSite };
-        const name = g.nameOf(String(a.id));
-        if (!name) return { ok: false, error: 'The bot does not know that person.' };
-        return { ok: true, v: { vote: String(g.voteOffForTest(name)) } };
       }
       default: return { ok: false, error: 'Unknown room op.' };
     }

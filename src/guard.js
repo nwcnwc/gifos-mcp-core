@@ -10,9 +10,11 @@
 //               '<value>': the bot sets it and puts it back if it changes.
 //   blur_all    press "Blur guests" when the page offers it to the bot.
 //   greet       true (default text), a text with {names}, or false.
-//   vote_out    when the room's own vote passes against someone, add the bot's standing vote so it holds.
+//   Removing someone is setting a password (everyone inside keeps it, the removed person does not get it). GifOS keeps
+//   no ban list, by design: a person can change browsers. So a room held with no password removes nobody; to remove
+//   people, hold the room with a password.
 //   rank        0, 1, ...: SIBLINGS. The same bot (same name, password and credentials; GIFOS_BOT_SIBLING=1 on each) runs on several computers. All of them are the room's admin at once (one subscription key);
-//               the one that holds the subscription's meeting ticket is the LEAD (greets, votes, answers chat). When
+//               the one that holds the subscription's meeting ticket is the LEAD (greets, answers chat). When
 //               the lead's seat is gone the next sibling takes the ticket back, rank 0 first.
 //   handler     path of a module exporting onMessage(message, room): called on the lead for every chat or spoken
 //               line from a person; room.sendChat(text) and room.say(text) answer. See examples/.
@@ -43,7 +45,6 @@ export function normalizePolicy(p, base) {
     password: typeof p.password === 'string' && p.password !== '' ? p.password : null,
     blur_all: p.blur_all !== false,
     greet: p.greet === false ? false : (typeof p.greet === 'string' && p.greet.includes('{names}') ? p.greet : GREETING),
-    vote_out: p.vote_out !== false,
     rank: Math.max(0, Math.trunc(Number(p.rank) || 0)),
     handler: rel(p.handler),
   };
@@ -55,7 +56,7 @@ export function normalizePolicy(p, base) {
 export function newMemory() {
   const never = -Infinity;   // no throttle has run yet, whatever the clock reads
   return { credLoaded: false, capOffSince: 0, lastCapture: never, lastReload: never, siblingSeenAt: 0, pwWrongSince: 0, lastPwFix: never,
-    role: 'starting', seen: null, queue: [], lastGreet: never, voted: new Set(), blurGap: false, signinAt: never };
+    role: 'starting', seen: null, queue: [], lastGreet: never, blurGap: false, signinAt: never };
 }
 
 // state: the guard.state op's answer. botName: the bot's own seat name (its siblings carry the same).
@@ -141,7 +142,6 @@ function leadDuties(state, policy, mem, now, botName, lead, act, out) {
   for (const p of people) {
     if (p.id === state.me) continue;
     if (!mem.seen.has(p.id) && p.name) { mem.seen.add(p.id); if (p.name !== botName) mem.queue.push(p.name); }
-    if (policy.vote_out && p.voted_out && !mem.voted.has(p.id)) { mem.voted.add(p.id); act('guard.vote_out', { id: p.id }, 'the room voted ' + p.name + ' out; the bot\'s vote keeps it'); }
   }
   if (policy.greet && mem.queue.length && now - mem.lastGreet >= GREET_EVERY_MS) {
     mem.lastGreet = now;

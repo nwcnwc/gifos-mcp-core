@@ -9,7 +9,7 @@ export function registerGuardTools(server, ctx) {
 
   server.registerTool('guard_room', {
     title: 'Hold a room as its admin',
-    description: 'The bot joins the room and holds it as its admin, so nobody else can take it or change its password (GifOS 0.9.26). An open room is held by capture: credentials is the path of a GifOS subscription file on the $5 or $10 plan (Settings > Subscription > download). A room with a host (mode admin) is held by signing in with host_password. password: omit to keep the room with no password (any password set is cleared at once); give a value to set it and keep it. blur_all presses Blur guests when the page offers it. greet posts a short welcome for newcomers. vote_out adds the bot\'s vote when the room votes someone out. rank orders sibling copies of this bot (same name, password and credentials on other computers; GIFOS_BOT_SIBLING=1 on each): all are admins, rank 0 leads. A handler module (onMessage) answers people; see the README. The credentials file is read here and never returned.',
+    description: 'The bot joins the room and holds it as its admin, so nobody else can take it or change its password (GifOS 0.9.26). An open room is held by capture: credentials is the path of a GifOS subscription file on the $5 or $10 plan (Settings > Subscription > download). A room with a host (mode admin) is held by signing in with host_password. password: omit to keep the room with no password (any password set is cleared at once); give a value to set it and keep it. blur_all presses Blur guests when the page offers it. greet posts a short welcome for newcomers. Removing someone means setting a password (GifOS keeps no ban list), so a room kept with no password removes nobody. rank orders sibling copies of this bot (same name, password and credentials on other computers; GIFOS_BOT_SIBLING=1 on each): all are admins, rank 0 leads. A handler module (onMessage) answers people; see the README. The credentials file is read here and never returned.',
     inputSchema: {
       link: z.string().url().max(2048).describe('The room link.'),
       mode: z.enum(['open', 'admin']).optional().describe('open (default): hold an open room by capture. admin: a room with a host.'),
@@ -18,7 +18,6 @@ export function registerGuardTools(server, ctx) {
       password: z.string().max(200).optional().describe('The room password to keep. Omit to keep the room with none.'),
       blur_all: z.boolean().optional().describe('Press Blur guests when offered (default true).'),
       greet: z.union([z.boolean(), z.string().max(400)]).optional().describe('true (default), false, or a welcome text with {names}.'),
-      vote_out: z.boolean().optional().describe('Back the room\'s vote to remove someone (default true).'),
       rank: z.number().int().min(0).max(9).optional().describe('Sibling order: 0 leads.'),
       handler: z.string().max(1024).optional().describe('Path of a module exporting onMessage(message, room).'),
     },

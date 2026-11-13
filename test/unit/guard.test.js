@@ -16,7 +16,7 @@ test('policy: an open room needs credentials, a room with a host needs its passw
   assert.throws(() => normalizePolicy({ link: 'https://gifos.app/meet/x' }), /credentials/);
   assert.throws(() => normalizePolicy({ link: 'https://gifos.app/meet/x', mode: 'admin' }), /host_password/);
   const p = pol();
-  assert.equal(p.password, null); assert.equal(p.blur_all, true); assert.equal(p.vote_out, true); assert.equal(p.greet, GREETING); assert.equal(p.rank, 0);
+  assert.equal(p.password, null); assert.equal(p.blur_all, true); assert.equal(p.vote_out, undefined, 'no ban list: removing someone is a password'); assert.equal(p.greet, GREETING); assert.equal(p.rank, 0);
   assert.equal(pol({ password: 'abc' }).password, 'abc');
   assert.equal(pol({ greet: false }).greet, false);
 });
@@ -70,16 +70,16 @@ test('siblings: the co-admin fixes the password only if the lead has not, and ta
   assert.deepEqual(ops(r), ['guard.credentials']); assert.ok(r.events.some((e) => e.type === 'guard.takeover'));
 });
 
-test('the lead greets newcomers (not the people already there, not its sibling), batched, and backs a passed vote', () => {
+test('the lead greets newcomers (not the people already there, not its sibling), batched', () => {
   const m = Object.assign(newMemory(), { credLoaded: true });
   const held = (people) => st({ capture: { on: true, mine: true }, subscription: { held: true }, people });
   plan(held([{ id: 'x', name: 'Old' }]), pol(), m, 1000, BOT);
   let r = plan(held([{ id: 'x', name: 'Old' }, { id: 'a', name: 'Ada' }, { id: 'b', name: 'Bob' }, { id: 's', name: BOT }]), pol(), m, 20000, BOT);
   assert.deepEqual(r.greet, ['Ada', 'Bob']);
-  r = plan(held([{ id: 'x', name: 'Old' }, { id: 'a', name: 'Ada' }, { id: 't', name: 'Troll', voted_out: true }]), pol(), m, 25000, BOT);
-  assert.deepEqual(ops(r), ['guard.vote_out']); assert.equal(r.greet, null, 'slow mode: next greeting after 12 s');
-  r = plan(held([{ id: 't', name: 'Troll', voted_out: true }]), pol(), m, 40000, BOT);
-  assert.deepEqual(r.greet, ['Troll']); assert.deepEqual(ops(r), [], 'one vote per person');
+  r = plan(held([{ id: 'x', name: 'Old' }, { id: 'a', name: 'Ada' }, { id: 'c', name: 'Cy' }]), pol(), m, 25000, BOT);
+  assert.equal(r.greet, null, 'slow mode: next greeting after 12 s');
+  r = plan(held([{ id: 'c', name: 'Cy' }]), pol(), m, 40000, BOT);
+  assert.deepEqual(r.greet, ['Cy']); assert.deepEqual(ops(r), []);
   assert.equal(greetingText('Hi {names}!', ['Ada', 'Bob', 'Cy']), 'Hi Ada, Bob and Cy!');
   assert.equal(greetingText('Hi {names}!', ['see https://evil.example now']), 'Hi see  now!');
 });
@@ -132,22 +132,20 @@ async function run(fr, op, args) {
 }
 
 test('page ops: the guard ops are listed', () => {
-  for (const op of ['guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all', 'guard.vote_out']) assert.ok(ROOM_OPS.includes(op), op);
+  for (const op of ['guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all']) assert.ok(ROOM_OPS.includes(op), op);
 });
 
-test('page ops: state reads capture, password, people; credentials, capture, password and vote act through the page', async () => {
+test('page ops: state reads capture, password, people; credentials, capture and password act through the page', async () => {
   const fr = frame({ capOn: true, mine: true, pw: 'x' });
   let r = await run(fr, 'guard.state', { want: '' });
   assert.equal(r.ok, true);
   assert.deepEqual(r.v.capture, { on: true, mine: true, can_take: false });
   assert.equal(r.v.password_set, true); assert.equal(r.v.password_ok, false);
-  assert.deepEqual(r.v.people, [{ id: 'p1', name: 'Ada', voted_out: true }]);
+  assert.deepEqual(r.v.people, [{ id: 'p1', name: 'Ada' }]);
   r = await run(fr, 'guard.password', { value: '' });
   assert.equal(r.ok, true); assert.equal(fr.s.pw, '');
   r = await run(fr, 'guard.credentials', { gif_b64: Buffer.from('GIF89a-bytes').toString('base64') });
   assert.equal(r.ok, true); assert.equal(fr.s.used, 12);
-  r = await run(fr, 'guard.vote_out', { id: 'p1' });
-  assert.equal(r.v.vote, 'voted p1'); assert.deepEqual(fr.s.votes, ['Ada']);
   r = await run(fr, 'guard.blur_all', { on: true });
   assert.equal(r.ok, false, 'not offered to an open-room admin');
   const other = frame({ capOn: true, mine: false });
