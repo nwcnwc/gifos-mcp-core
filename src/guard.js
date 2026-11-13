@@ -11,8 +11,7 @@
 //   blur_all    press "Blur guests" when the page offers it to the bot.
 //   greet       true (default text), a text with {names}, or false.
 //   vote_out    when the room's own vote passes against someone, add the bot's standing vote so it holds.
-//   rank        0, 1, ...: SIBLINGS. The same bot (same name, password and credentials; GIFOS_BOT_SIBLING=1 on all
-//               but one) runs on several computers. All of them are the room's admin at once (one subscription key);
+//   rank        0, 1, ...: SIBLINGS. The same bot (same name, password and credentials; GIFOS_BOT_SIBLING=1 on each) runs on several computers. All of them are the room's admin at once (one subscription key);
 //               the one that holds the subscription's meeting ticket is the LEAD (greets, votes, answers chat). When
 //               the lead's seat is gone the next sibling takes the ticket back, rank 0 first.
 //   handler     path of a module exporting onMessage(message, room): called on the lead for every chat or spoken

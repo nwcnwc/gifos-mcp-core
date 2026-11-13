@@ -196,6 +196,10 @@ export class MeetingBotDriver {
       });
     }
     await ctx.addInitScript({ content: 'try{var o=' + JSON.stringify(init) + ';for(var k in o)localStorage.setItem(k,o[k]);}catch(e){}' });
+    // GIFOS_MCP_PAY_URL (testing): the payment service a local GifOS stack serves (subscriptions, room capture);
+    // the site's own default is the production one.
+    const payUrl = String(process.env.GIFOS_MCP_PAY_URL || '');
+    if (/^https?:\/\/[^\s'"]+$/.test(payUrl)) await ctx.addInitScript({ content: 'window.GIFOS_PAY_URL=' + JSON.stringify(payUrl.replace(/\/$/, '')) + ';' });
     // This process embeds the page, so provider calls for the roles it hosts
     // come back through the binding above. The page does not fetch them.
     // Meet Bot's frame never sees a URL or a key. On a fresh profile the
