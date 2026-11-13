@@ -6,11 +6,13 @@
 import { z } from 'zod';
 import { scrub } from '../voice/settings.js';
 import { meetingIdFor } from './shared.js';
+import { registerGuardTools } from './guard.js';
 
 const TURNS_APP = 'taketurns';
 
 export function registerRoomTools(server, ctx, { name } = {}) {
   const meetingId = meetingIdFor(name || 'gifos-meet-mcp');
+  registerGuardTools(server, ctx);
   const { bot, ok, guarded, needLive, secrets } = ctx;
   const room = (m, op, args) => {
     if (typeof bot.room !== 'function') throw new Error('This bot cannot reach the meeting page.');

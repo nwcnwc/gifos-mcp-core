@@ -91,6 +91,16 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
   const boot = make();
   ctx.clock.start();
   if (typeof product.onStart === 'function') await product.onStart(ctx, rt);
+  // GIFOS_GUARD_CONFIG: rooms this bot holds as their admin from the start (src/guard.js).
+  if (cfg.guardConfig) {
+    try {
+      const { startGuardsFromConfig } = await import('./guard.js');
+      const list = await startGuardsFromConfig(ctx, cfg.guardConfig, { log });
+      ctx.guards = ctx.guards || new Map();
+      for (const g of list) ctx.guards.set(g.policy.link, g);
+      log('guarding ' + list.length + ' room(s) from ' + cfg.guardConfig);
+    } catch (e) { log('guard config not started: ' + String((e && e.message) || e)); process.exit(1); }
+  }
   log(name + ' ' + version + ' · GifOS ' + cfg.gifosUrl + ' · bot "' + creds.name + '" (' + creds.source + ') · data ' + cfg.home);
 
   let closing = false;

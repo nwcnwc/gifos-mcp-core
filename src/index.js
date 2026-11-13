@@ -3,6 +3,8 @@ export { runMain, createRuntime, ENV_HELP } from './main.js';
 export { createServer } from './server.js';
 export { createContext, GONE_RE } from './context.js';
 export { registerRoomTools } from './tools/room.js';
+export { registerGuardTools } from './tools/guard.js';
+export { RoomGuard, plan as guardPlan, normalizePolicy as guardPolicy, newMemory as guardMemory, greetingText, startGuardsFromConfig, GREETING } from './guard.js';
 export { ROOM_OPS, TURNS_OPS, OLD_SITE, roomPageOp, turnsPageOp } from './room.js';
 export { registerSharedTools, meetingId, meetingIdFor, instructionsField } from './tools/shared.js';
 export { loadConfig, botCredentials, DEFAULT_GIFOS_URL } from './config.js';

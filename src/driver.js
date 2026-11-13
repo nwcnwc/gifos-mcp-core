@@ -435,8 +435,8 @@ export class MeetingBotDriver {
   // RUN first listens ~5 s for a bot with the same name and password. A copy
   // of this server stopped seconds ago can still look alive: wait it out once.
   async startRun() {
-    const run = () => this.bot.frame.evaluate((c) => window.MeetingBot.start({ mode: 'run', name: c.name, password: c.password })
-      .then((s) => ({ ok: true, s }), (e) => ({ ok: false, error: String((e && e.message) || e) })), this.creds);
+    const run = () => this.bot.frame.evaluate((c) => window.MeetingBot.start({ mode: 'run', name: c.name, password: c.password, override: c.override })
+      .then((s) => ({ ok: true, s }), (e) => ({ ok: false, error: String((e && e.message) || e) })), { ...this.creds, override: !!this.cfg.botSibling });
     let r = await run();
     if (!r.ok && /already running/.test(r.error)) {
       log('another bot with these credentials looks alive; waiting 20 s and trying once more');

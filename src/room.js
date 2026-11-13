@@ -1,6 +1,6 @@
 // Meeting features that Meeting Bot's control API (window.MeetingBot) does
-// not carry yet: the agenda, running an app in the meeting, the stage, and
-// signing in as the host. GifOS 0.9.26 has them in the meeting page itself,
+// not carry yet: the agenda, running an app in the meeting, the stage,
+// signing in as the host, and holding a room as its admin (guard.*). GifOS 0.9.26 has them in the meeting page itself,
 // so the bot's browser reaches them in the bot's own meeting frame
 // (iframe[data-gifos-meet=<session>], same origin as the page that holds
 // Meeting Bot). Everything here acts as the bot's own seat, with the same
@@ -14,6 +14,7 @@ export const ROOM_OPS = [
   'app.list', 'app.run', 'app.stop', 'app.state',
   'stage.get', 'stage.set', 'stage.grant',
   'host.signin', 'host.state',
+  'guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all', 'guard.vote_out',
 ];
 
 export const OLD_SITE = 'This GifOS site does not have that yet (it needs GifOS 0.9.26 or newer).';
@@ -157,6 +158,75 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         if (modal) modal.style.display = 'none';
         if (!ok) return { ok: false, error: 'That host password did not sign the bot in.' };
         return { ok: true, v: { bot_is_host: true } };
+      }
+      // ---- guard: hold a room as its admin (src/guard.js) ----
+      // What the bot's seat knows about the room's admin, password, people and votes. An open room's admin is the
+      // subscriber who captured it ("Make me admin"); every page shows the plain note #capnote while a capture holds,
+      // and the password button is the captor's alone (disabled for everyone else).
+      case 'guard.state': {
+        const doc = w.document;
+        const d = has(g.debugDump) ? g.debugDump() : {};
+        const M = w.GifOS && w.GifOS.meetSubs;
+        const mt = M && has(M.meeting) ? M.meeting() : null;
+        const vis = (el) => !!(el && el.style.display !== 'none');
+        const note = doc.getElementById('capnote'), cb = doc.getElementById('capbtn'), pwb = doc.getElementById('pwbtn'), ba = doc.getElementById('blurall');
+        const capOn = vis(note);
+        const ids = has(g.rosterIdsNow) ? g.rosterIdsNow() : [];
+        return { ok: true, v: {
+          supported: !!(note && cb && pwb && M && has(M.useFile)),
+          seated: !!(d.me && d.me.state === 3), participants: d.participants || 0, me: d.me ? d.me.peer : null,
+          admin_room: has(g.hasAdmin) ? !!g.hasAdmin() : false, host: admin(),
+          capture: { on: capOn, mine: capOn && !!pwb && !pwb.disabled, can_take: vis(cb) && !cb.disabled },
+          password_set: has(g.roomPw) ? !!g.roomPw() : null,
+          password_ok: has(g.roomPw) ? String(g.roomPw() || '') === String(a.want || '') : null,
+          locked_out: (() => { const m = doc.getElementById('pw-modal'); return !!(m && m.style.display && m.style.display !== 'none' && m.dataset.mode === 'join'); })(),
+          subscription: mt ? { held: !!mt.held, moved: mt.moved || null, tier: mt.tier || null, paid: !!mt.paid } : null,
+          subs_on: !!(M && has(M.enabled) && M.enabled()),
+          blur_all: ba ? { offered: vis(ba), on: ba.classList.contains('on') } : null,
+          people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '', voted_out: has(g.kickedForTest) ? !!g.kickedForTest(pid) : false })),
+        } };
+      }
+      // Load a subscription file (the GifOS credentials GIF) into the bot's browser, so its seat joins with that plan.
+      case 'guard.credentials': {
+        const M = w.GifOS && w.GifOS.meetSubs;
+        if (!M || !has(M.useFile)) return { ok: false, error: oldSite };
+        try { w.localStorage.setItem('gifos-subs', '1'); } catch (e) {}
+        const bytes = Uint8Array.from(w.atob(String(a.gif_b64 || '')), (c) => c.charCodeAt(0));
+        const st = await M.useFile(bytes);
+        return { ok: true, v: { loaded: true, status: st && st.status ? st.status : null } };
+      }
+      // "Make me admin": the page's own button (shown to a $5/$10 subscriber in an open room nobody holds).
+      case 'guard.capture': {
+        const b = w.document.getElementById('capbtn');
+        if (!b) return { ok: false, error: oldSite };
+        if (b.style.display === 'none' || b.disabled) return { ok: false, error: 'The page does not offer "Make me admin" now (the room is held, or the subscription has no ticket for this meeting yet).' };
+        b.click();
+        return { ok: true, v: { tapped: true } };
+      }
+      // Set or clear the room password with the page's own Password dialog ('' clears).
+      case 'guard.password': {
+        const doc = w.document;
+        const b = doc.getElementById('pwbtn'), i = doc.getElementById('pw-new'), s = doc.getElementById('pw-save');
+        if (!b || !i || !s) return { ok: false, error: oldSite };
+        if (b.disabled) return { ok: false, error: 'The password belongs to this room\'s admin, and the bot is not it.' };
+        b.click(); i.value = String(a.value || '');
+        if (has(s.onclick)) s.onclick(); else s.click();
+        i.value = '';
+        return { ok: true, v: { set: !!a.value } };
+      }
+      // "Blur guests": the admin's one room-wide blur.
+      case 'guard.blur_all': {
+        const b = w.document.getElementById('blurall');
+        if (!b || b.style.display === 'none') return { ok: false, error: 'The page does not offer Blur guests to the bot here (it is an admin-room admin control).' };
+        if (b.classList.contains('on') !== !!a.on) b.click();
+        return { ok: true, v: { on: b.classList.contains('on') } };
+      }
+      // Add the bot's own standing vote to vote someone out of the room (the room's vote-off; L27).
+      case 'guard.vote_out': {
+        if (!has(g.voteOffForTest) || !has(g.nameOf)) return { ok: false, error: oldSite };
+        const name = g.nameOf(String(a.id));
+        if (!name) return { ok: false, error: 'The bot does not know that person.' };
+        return { ok: true, v: { vote: String(g.voteOffForTest(name)) } };
       }
       default: return { ok: false, error: 'Unknown room op.' };
     }

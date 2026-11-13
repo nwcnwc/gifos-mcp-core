@@ -192,7 +192,7 @@ test('room tools: route to the bot seat, start Take Turns once, and never echo t
   const guarded = (fn) => async (a) => { try { return await fn(a); } catch (e) { return { isError: true, content: [{ type: 'text', text: e.message }] }; } };
   const ctx = { bot, ok, guarded, secrets: () => [], needLive: (id) => ({ meeting_id: id, session_id: 'w0:mt_1' }) };
   registerRoomTools({ registerTool: (n, d, fn) => { tools[n] = fn; } }, ctx, { name: 'gifos-meet-mcp' });
-  assert.deepEqual(Object.keys(tools).sort(), ['get_agenda', 'list_apps', 'next_agenda_item', 'run_app', 'set_agenda', 'sign_in_as_host', 'stage', 'stop_app', 'take_turns']);
+  assert.deepEqual(Object.keys(tools).sort(), ['get_agenda', 'guard_room', 'guard_status', 'list_apps', 'next_agenda_item', 'run_app', 'set_agenda', 'sign_in_as_host', 'stage', 'stop_app', 'stop_guard', 'take_turns']);
   const st = JSON.parse((await tools.take_turns({ meeting_id: 'm1', action: 'start' })).content[0].text);
   assert.equal(st.started, true);
   assert.equal(st.turns.up_now, 'Ana');

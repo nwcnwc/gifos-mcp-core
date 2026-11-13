@@ -40,6 +40,11 @@ export function loadConfig(env = process.env) {
     botAudio: env.GIFOS_BOT_AUDIO ? path.resolve(String(env.GIFOS_BOT_AUDIO).trim()) : '', // Chromium needs an absolute path
     shotsDir: String(env.GIFOS_MCP_SHOTS || '').trim(),
     timeoutMs: Number(env.GIFOS_TIMEOUT_MS) > 0 ? Number(env.GIFOS_TIMEOUT_MS) : 120000,
+    // A sibling: another copy of this bot (same name and password) runs on purpose on another computer, and both
+    // guard the same room as co-admins (src/guard.js). Meeting Bot then starts despite the running duplicate.
+    botSibling: /^(1|true|yes)$/i.test(String(env.GIFOS_BOT_SIBLING || '')),
+    // A guard config (src/guard.js): hold rooms as their admin when the server starts.
+    guardConfig: env.GIFOS_GUARD_CONFIG || '',
     prewarm: env.GIFOS_MCP_LAZY !== '1',
     // Every join turns captions on unless GIFOS_ALWAYS_TRANSCRIBE=0.
     alwaysTranscribe: env.GIFOS_ALWAYS_TRANSCRIBE !== '0',
