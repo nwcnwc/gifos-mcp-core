@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { RoomGuard, normalizePolicy } from '../guard.js';
+import { roomFromLink } from '../links.js';
 import { log } from '../log.js';
 
 export function registerGuardTools(server, ctx) {
@@ -11,12 +12,12 @@ export function registerGuardTools(server, ctx) {
 
   server.registerTool('guard_room', {
     title: 'Hold a room as its admin',
-    description: 'The bot joins the room and holds it as its admin, so nobody else can take it or change its password (GifOS 0.9.26). An open room is held by capture: credentials is the path of a GifOS credentials GIF that may capture: a subscription file on the $5 or $10 plan (Settings > Subscription > download) or a staff pass. A room with a host (mode admin) is held by signing in with host_password. password: omit to keep the room with no password (any password set is cleared at once); give a value to set it and keep it. blur_all presses Blur guests when the page offers it. greet posts a short welcome for newcomers. Removing someone means setting a password (GifOS keeps no ban list), so a room kept with no password removes nobody. rank orders sibling copies of this bot (same name, password and credentials on other computers; GIFOS_BOT_SIBLING=1 on each): all are admins, rank 0 leads. A handler module (onMessage) answers people; see the README. The credentials file is read here and never returned.',
+    description: 'The bot joins the room and holds it as its admin, so nobody else can take it or change its password (GifOS 0.9.26). An open room is held by capture: credentials is the path of a GifOS credentials GIF that may capture: a subscription file on the $5 or $10 plan (Settings > Subscription > download) or a staff pass. A room with a host (mode admin) is held by signing in with host_password (omit it for a room this server made: it uses the one it keeps). password: omit to keep the room with no password (any password set is cleared at once); give a value to set it and keep it. blur_all presses Blur guests when the page offers it. greet posts a short welcome for newcomers. Removing someone means setting a password (GifOS keeps no ban list), so a room kept with no password removes nobody. rank orders sibling copies of this bot (same name, password and credentials on other computers; GIFOS_BOT_SIBLING=1 on each): all are admins, rank 0 leads. A handler module (onMessage) answers people; see the README. The credentials file is read here and never returned.',
     inputSchema: {
       link: z.string().url().max(2048).describe('The room link.'),
       mode: z.enum(['open', 'admin']).optional().describe('open (default): hold an open room by capture. admin: a room with a host.'),
       credentials: z.string().max(1024).optional().describe('Path of the GifOS credentials GIF (a $5/$10 subscription file or a staff pass). Needed for an open room.'),
-      host_password: z.string().min(1).max(200).optional().describe('mode admin: the host password. Used in the bot\'s browser only.'),
+      host_password: z.string().min(1).max(200).optional().describe('mode admin: the host password (omit for a room this server made). Used in the bot\'s browser only.'),
       password: z.string().max(200).optional().describe('The room password to keep. Omit to keep the room with none.'),
       blur_all: z.boolean().optional().describe('Press Blur guests when offered (default true).'),
       greet: z.union([z.boolean(), z.string().max(400)]).optional().describe('true (default), false, or a welcome text with {names}.'),
@@ -24,6 +25,11 @@ export function registerGuardTools(server, ctx) {
       handler: z.string().max(1024).optional().describe('Path of a module exporting onMessage(message, room).'),
     },
   }, guarded(async (args) => {
+    // A room this server made keeps its host password (the product's ctx.hostPasswordFor): mode admin needs no host_password then.
+    if (args.mode === 'admin' && !args.host_password && typeof ctx.hostPasswordFor === 'function') {
+      const kept = ctx.hostPasswordFor(roomFromLink(args.link));
+      if (kept) args = { ...args, host_password: kept };
+    }
     const policy = normalizePolicy(args);
     if (guards.has(policy.link)) return ok({ guarding: true, note: 'Already guarding this room.', ...guards.get(policy.link).status() });
     const g = await new RoomGuard(ctx, policy, { log }).start();

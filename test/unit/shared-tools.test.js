@@ -188,3 +188,15 @@ test('a product\'s instructions reach the client at initialize', async () => {
   await Promise.all([srv.connect(a), c.connect(b)]);
   assert.equal(c.getInstructions(), 'Rooms: open or admin.');
 });
+
+test('guard_room mode admin: needs host_password, unless the product keeps the room\'s (ctx.hostPasswordFor)', async () => {
+  const link = 'http://127.0.0.1:19510/run.html#v=room9';
+  const none = await call('guard_room', { link, mode: 'admin' });
+  assert.equal(none.isError, true); assert.match(none.content[0].text, /host_password/);
+  ctx.hostPasswordFor = (room) => (room === 'room9' ? 'kept-host-pw-9' : '');
+  bot.room = async () => ({ supported: true, seated: false });
+  const r = await call('guard_room', { link, mode: 'admin', greet: false });
+  assert.equal(r.isError, undefined, r.content[0].text);
+  assert.equal(r.content[0].text.includes('kept-host-pw-9'), false);
+  await call('stop_guard', { link });
+});
