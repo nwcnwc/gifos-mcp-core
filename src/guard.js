@@ -35,6 +35,7 @@ const RELOAD_EVERY_MS = 30000;
 const GREET_EVERY_MS = 12000;   // an open room's chat is in slow mode: one line per 10 s
 const RANK_DELAY_MS = 60000;    // with nobody holding the room, rank N waits N x this before taking it
 const SIBLING_GONE_MS = 45000;  // the lead's seat gone this long (+20 s per rank): take the ticket back
+const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
 
 export function normalizePolicy(p, base) {
   if (!p || typeof p !== 'object') throw new Error('A guard needs a policy object.');
@@ -209,7 +210,18 @@ export class RoomGuard {
     try {
       const m = await this.ensureJoined(); if (!m) return;
       const want = this.policy.password || '';
-      const st = await this.ctx.bot.room(m.session_id, 'guard.state', { want });
+      let st;
+      try { st = await this.ctx.bot.room(m.session_id, 'guard.state', { want }); }
+      catch (e) {
+        // The meeting session is gone (a site deploy moves open pages to the new version and drops Meeting Bot's
+        // session frames; seen live: both welcome bots sat out for minutes). Mark the seat gone and join again at the
+        // next tick, instead of asking a dead session every tick.
+        if (!SESSION_GONE_RE.test(String((e && e.message) || e))) throw e;
+        this.note('guard.rejoin', { why: 'the meeting session is gone (the site was updated, or the page dropped it)' });
+        if (typeof this.ctx.holdSeat === 'function') this.ctx.holdSeat(m.meeting_id, { state: 'scheduled', session_id: null, transcribing: false, reseat: false });
+        this.meetingId = null; this.mem = Object.assign(newMemory(), { role: 'waiting' });
+        return;
+      }
       const p = plan(st, this.policy, this.mem, Date.now(), this.botName());
       this.last = { at: new Date().toISOString(), role: p.role, participants: st && st.participants, capture: st && st.capture, password_set: st && st.password_set,
         password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all };
