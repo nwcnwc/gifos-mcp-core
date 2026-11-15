@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tmpHome } from './fixtures/tmp-home.js';
 import { tinyPng } from './profile.test.js';
+import { registerGuardTools } from '../../src/tools/guard.js';
 
 class FakeBot {
   constructor() { this.calls = []; this.seq = 0; this.voice = null; }
@@ -37,6 +38,7 @@ const json = (r) => JSON.parse(r.content[0].text);
 function product(server, c) {
   server.registerTool('test_join', { description: 'Test product: join a room by link.', inputSchema: { link: z.string() } },
     c.guarded(async ({ link }) => c.ok(publicView((await c.joinByLink(link, '', 'Test')).meeting))));
+  registerGuardTools(server, c);   // use_credentials
 }
 
 beforeEach(async () => {
@@ -143,4 +145,38 @@ test('snapshot returns the PNG as image content when the file is there', async (
   assert.equal(shot.content[1].type, 'image');
   assert.equal(shot.content[1].mimeType, 'image/png');
   assert.equal(Buffer.from(shot.content[1].data, 'base64').equals(tinyPng()), true);
+});
+
+test('GIFOS_CREDENTIALS: the file is read once and handed only to the bot\'s browser at each join; a guarded room is skipped', async () => {
+  const h = tmpHome('gifos-mcp-core-cred-');
+  const file = path.join(h, 'cred.gif');
+  fs.writeFileSync(file, Buffer.from('GIF89a-secret-credential-bytes'), { mode: 0o600 });
+  const cfg = loadConfig({ GIFOS_MCP_HOME: h, GIFOS_URL: 'http://127.0.0.1:19510/', GIFOS_BOT_NAME: 'notes-test', GIFOS_BOT_PASSWORD: 'quiet-cedar-42', GIFOS_CREDENTIALS: file });
+  assert.equal(cfg.credentials, file);
+  const b = new FakeBot();
+  b.room = async (id, op, args) => { b.calls.push(['room', id, op, args.gif_b64]); return { loaded: true }; };
+  const c = createContext({ cfg, meetings: new MeetingStore(h), bot: b, botName: 'notes-test', botPassword: 'quiet-cedar-42' });
+  fs.unlinkSync(file);   // read once at start: the file is not needed again
+  assert.equal(c.credentials.has(), true);
+  await c.joinByLink('http://127.0.0.1:19510/run.html#v=room1', '', 'Test');
+  const loads = b.calls.filter((x) => x[0] === 'room' && x[2] === 'guard.credentials');
+  assert.equal(loads.length, 1);
+  assert.equal(Buffer.from(loads[0][3], 'base64').toString(), 'GIF89a-secret-credential-bytes');
+  c.credentials.guardRoom('room2');
+  await c.joinByLink('http://127.0.0.1:19510/run.html#v=room2', '', 'Test');
+  assert.equal(b.calls.filter((x) => x[0] === 'room').length, 1, 'the guard loads its own file in its own room');
+  const evs = fs.existsSync(path.join(h, 'events.jsonl')) ? fs.readFileSync(path.join(h, 'events.jsonl'), 'utf8') : '';
+  assert.equal(evs.includes(Buffer.from('GIF89a-secret-credential-bytes').toString('base64')), false);
+});
+
+test('use_credentials: takes a path or base64, refuses a non-GIF, never returns the bytes', async () => {
+  const r0 = await call('use_credentials', { gif_b64: Buffer.from('not a gif at all, nope').toString('base64') });
+  assert.equal(r0.isError, true);
+  const f = path.join(home, 'c.gif'); fs.writeFileSync(f, Buffer.from('GIF89a-user-pass-bytes'));
+  bot.room = async () => ({ loaded: true });
+  await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room1' });
+  const r = await call('use_credentials', { path: f });
+  const v = json(r);
+  assert.equal(v.loaded_in, 1);
+  assert.equal(JSON.stringify(r).includes(Buffer.from('GIF89a-user-pass-bytes').toString('base64')), false);
 });

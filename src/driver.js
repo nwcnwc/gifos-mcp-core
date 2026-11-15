@@ -186,6 +186,11 @@ export class MeetingBotDriver {
     // headless browser's own language (en-US) would make Whisper translate
     // every other language into English.
     init.gifos_cc_lang = captionLang(this.cfg.ccLang);
+    // A guard (GIFOS_GUARD_CONFIG) or a user's credentials file (GIFOS_CREDENTIALS) needs the page's subscription switch
+    // on BEFORE a meeting starts: the page joins its meeting with a subscription or pass only at that start (GifOS
+    // meet-subs.js joinMeeting). Switched on later, a loaded file never reached the meeting: the guard never got the
+    // ticket that offers "Make me admin" until its browser restarted.
+    if (this.cfg.guardConfig || this.cfg.credentials) init['gifos-subs'] = '1';
     const roles = hostRoles(this.cfg);
     if (roles.length) {
       await ctx.exposeBinding(HOST_BINDING, async (_source, role, payload) => {

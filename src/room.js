@@ -180,7 +180,14 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
           password_set: has(g.roomPw) ? !!g.roomPw() : null,
           password_ok: has(g.roomPw) ? String(g.roomPw() || '') === String(a.want || '') : null,
           locked_out: (() => { const m = doc.getElementById('pw-modal'); return !!(m && m.style.display && m.style.display !== 'none' && m.dataset.mode === 'join'); })(),
-          subscription: mt ? { held: !!mt.held, moved: mt.moved || null, tier: mt.tier || null, paid: !!mt.paid } : null,
+          // The meeting's ticket from a subscription (meeting()) or a pass such as the staff pass (passMeeting()).
+          subscription: (() => {
+            const pm = M && has(M.passMeeting) ? M.passMeeting() : null;
+            if (!mt && !pm) return null;
+            const sh = !!(mt && mt.held), ph = !!(pm && pm.held);
+            return { held: sh || ph, via: sh ? 'sub' : ph ? 'pass' : null, moved: sh || ph ? null : ((pm && pm.moved) || (mt && mt.moved) || null),
+              tier: (mt && mt.tier) || (ph ? 'pass' : null), paid: !!(mt && mt.paid) || ph };
+          })(),
           subs_on: !!(M && has(M.enabled) && M.enabled()),
           blur_all: ba ? { offered: vis(ba), on: ba.classList.contains('on') } : null,
           people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '' })),

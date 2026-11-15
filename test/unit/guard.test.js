@@ -84,6 +84,31 @@ test('the lead greets newcomers (not the people already there, not its sibling),
   assert.equal(greetingText('Hi {names}!', ['see https://evil.example now']), 'Hi see  now!');
 });
 
+test('a staff pass: every sibling holds a ticket; the lowest rank present leads, the other is co-admin until its seat goes', () => {
+  const pass = (people, o) => st(Object.assign({ capture: { on: true, mine: true }, subscription: { held: true, via: 'pass' }, people }, o));
+  const mB = Object.assign(newMemory(), { credLoaded: true });
+  const mA = Object.assign(newMemory(), { credLoaded: true });
+  // B (rank 1) alone leads and greets.
+  let r = plan(pass([{ id: 'x', name: 'Old' }]), pol({ rank: 1 }), mB, 1000, BOT);
+  assert.equal(r.role, 'lead');
+  // A (rank 0) sits beside it: A leads, B is co-admin and does not greet.
+  r = plan(pass([{ id: 'x', name: 'Old' }, { id: 'a', name: BOT }, { id: 'n', name: 'Ned' }]), pol({ rank: 1 }), mB, 20000, BOT);
+  assert.equal(r.role, 'coadmin'); assert.equal(r.greet, null); assert.deepEqual(ops(r), []);
+  r = plan(pass([{ id: 'x', name: 'Old' }, { id: 'b', name: BOT }]), pol({ rank: 0 }), mA, 20000, BOT);
+  assert.equal(r.role, 'lead');
+  // The co-admin fixes a password only when the lead has not, after 6 s.
+  r = plan(pass([{ id: 'a', name: BOT }], { password_set: true }), pol({ rank: 1 }), mB, 21000, BOT);
+  assert.deepEqual(ops(r), []);
+  r = plan(pass([{ id: 'a', name: BOT }], { password_set: true }), pol({ rank: 1 }), mB, 28000, BOT);
+  assert.deepEqual(ops(r), ['guard.password']);
+  // A's seat goes: B leads at once, with no credentials reload, and does not greet people it already saw (Ned).
+  r = plan(pass([{ id: 'x', name: 'Old' }, { id: 'n', name: 'Ned' }, { id: 'z', name: 'Zoe' }]), pol({ rank: 1 }), mB, 60000, BOT);
+  assert.equal(r.role, 'lead'); assert.deepEqual(ops(r), []); assert.deepEqual(r.greet, ['Zoe']);
+  // The bot's own seat never counts as its sibling.
+  r = plan(pass([{ id: 'me', name: BOT }]), pol({ rank: 1 }), Object.assign(newMemory(), { credLoaded: true }), 1000, BOT);
+  assert.equal(r.role, 'lead');
+});
+
 test('Blur guests: pressed when offered, a gap event once when not', () => {
   const m = Object.assign(newMemory(), { credLoaded: true });
   const held = (ba) => st({ capture: { on: true, mine: true }, subscription: { held: true }, blur_all: ba });
@@ -148,6 +173,15 @@ test('page ops: state reads capture, password, people; credentials, capture and 
   assert.equal(r.ok, true); assert.equal(fr.s.used, 12);
   r = await run(fr, 'guard.blur_all', { on: true });
   assert.equal(r.ok, false, 'not offered to an open-room admin');
+  // A pass ticket (the staff pass) reads as held, via the pass.
+  const pf = frame({ capOn: true, mine: true });
+  const ms = pf.doc.querySelectorAll()[0].contentWindow.GifOS.meetSubs;
+  ms.meeting = () => ({ held: false, moved: null, tier: null, paid: false }); ms.passMeeting = () => ({ held: true, moved: null });
+  r = await run(pf, 'guard.state', { want: '' });
+  assert.deepEqual(r.v.subscription, { held: true, via: 'pass', moved: null, tier: 'pass', paid: true });
+  ms.passMeeting = () => ({ held: false, moved: 'moved' });
+  r = await run(pf, 'guard.state', { want: '' });
+  assert.deepEqual(r.v.subscription, { held: false, via: null, moved: 'moved', tier: null, paid: false });
   const other = frame({ capOn: true, mine: false });
   r = await run(other, 'guard.password', { value: '' });
   assert.equal(r.ok, false); assert.match(r.error, /admin/);

@@ -16,6 +16,8 @@
 //   rank        0, 1, ...: SIBLINGS. The same bot (same name, password and credentials; GIFOS_BOT_SIBLING=1 on each) runs on several computers. All of them are the room's admin at once (one subscription key);
 //               the one that holds the subscription's meeting ticket is the LEAD (greets, answers chat). When
 //               the lead's seat is gone the next sibling takes the ticket back, rank 0 first.
+//               A PASS (the staff pass) keeps a ticket in every session of one room (the pay Worker's sameMeeting),
+//               so all siblings hold one: the lowest rank present leads, the others are co-admins until its seat goes.
 //   handler     path of a module exporting onMessage(message, room): called on the lead for every chat or spoken
 //               line from a person; room.sendChat(text) and room.say(text) answer. See examples/.
 //
@@ -24,6 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { roomFromLink } from './links.js';
 
 export const GREETING = 'Welcome, {names}! This is a GifOS public room: be kind, 18+ only. If someone is out of line, tap Vote, then "Vote out of room" on them.';
 const TICK_MS = 3000;
@@ -67,7 +70,7 @@ export function plan(state, policy, mem, now, botName) {
   const setRole = (r, why) => { if (r !== mem.role) out.events.push({ type: 'guard.role', data: { from: mem.role, to: r, why } }); mem.role = r; out.role = r; };
   if (!state || !state.supported) { setRole('unsupported', 'this GifOS site has no room capture yet (it needs 0.9.26 or newer)'); return out; }
   if (!state.seated) { setRole(state.locked_out ? 'locked-out' : 'waiting', state.locked_out ? 'the door asks for a password' : 'not seated yet'); return out; }
-  const sibling = (state.people || []).some((p) => p.name === botName);
+  const sibling = (state.people || []).some((p) => p.id !== state.me && p.name === botName);
   if (sibling) mem.siblingSeenAt = now;
   const sub = state.subscription || {};
   const wantPw = policy.password || '';
@@ -114,8 +117,15 @@ export function plan(state, policy, mem, now, botName) {
     setRole('held-by-other', 'another subscriber holds the room');
     return out;
   }
-  if (sub.held) {
-    setRole('lead', 'admin, holds the subscription\'s meeting ticket');
+  if (sub.held && sub.via === 'pass' && sibling && policy.rank > 0) {
+    // Every sibling holds the pass's ticket: the lower rank beside this one leads.
+    setRole('coadmin', 'admin by the shared pass; a sibling of lower rank leads');
+    if (pwWrong && !mem.pwWrongSince) mem.pwWrongSince = now;
+    else if (pwWrong && now - mem.pwWrongSince > 6000) fixPassword('the lead has not fixed the password');
+    else if (!pwWrong) mem.pwWrongSince = 0;
+    leadDuties(state, policy, mem, now, botName, false, act, out);
+  } else if (sub.held) {
+    setRole('lead', 'admin, holds the meeting ticket');
     fixPassword('the room password is not what the policy says');
     leadDuties(state, policy, mem, now, botName, true, act, out);
   } else {
@@ -136,8 +146,8 @@ function leadDuties(state, policy, mem, now, botName, lead, act, out) {
     if (state.blur_all.offered && !state.blur_all.on) act('guard.blur_all', { on: true }, 'the policy blurs every guest');
     else if (!state.blur_all.offered && !mem.blurGap) { mem.blurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'blur_all', note: 'This GifOS page offers Blur guests only to the host of a room with a host; with no password the room shows no clear video anyway.' } }); }
   }
-  if (!lead) return;
   const people = state.people || [];
+  if (!lead) { if (mem.seen) for (const p of people) mem.seen.add(p.id); return; }   // the lead greets them; this bot does not later
   if (!mem.seen) { mem.seen = new Set(people.map((p) => p.id)); return; }   // who was here when this bot became the lead: not newcomers
   for (const p of people) {
     if (p.id === state.me) continue;
@@ -163,6 +173,7 @@ export class RoomGuard {
     this.mem = newMemory(); this.meetingId = null; this.timer = null; this.busy = false; this.last = null; this.handler = null;
     this.credB64 = policy.credentials ? fs.readFileSync(policy.credentials).toString('base64') : '';
     this.joinFails = 0; this.nextJoin = 0; this.unhook = null;
+    if (ctx.credentials && typeof ctx.credentials.guardRoom === 'function') ctx.credentials.guardRoom(roomFromLink(policy.link));
   }
   botName() { const n = typeof this.ctx.ourNames === 'function' ? this.ctx.ourNames() : [this.ctx.botName]; return String((n && n[0]) || this.ctx.botName || ''); }
   async start() {

@@ -45,6 +45,9 @@ export function loadConfig(env = process.env) {
     botSibling: /^(1|true|yes)$/i.test(String(env.GIFOS_BOT_SIBLING || '')),
     // A guard config (src/guard.js): hold rooms as their admin when the server starts.
     guardConfig: env.GIFOS_GUARD_CONFIG || '',
+    // GIFOS_CREDENTIALS: path of a GifOS credentials file (a subscription GIF or a pass such as the staff pass). Read
+    // once at start; its bytes go only into the bot's own browser, which joins every meeting with that plan.
+    credentials: env.GIFOS_CREDENTIALS ? path.resolve(String(env.GIFOS_CREDENTIALS).trim()) : '',
     prewarm: env.GIFOS_MCP_LAZY !== '1',
     // Every join turns captions on unless GIFOS_ALWAYS_TRANSCRIBE=0.
     alwaysTranscribe: env.GIFOS_ALWAYS_TRANSCRIBE !== '0',

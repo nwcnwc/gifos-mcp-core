@@ -1,4 +1,6 @@
 // Tools for guarding a room (src/guard.js): the bot holds a room as its admin and keeps it the way the policy says.
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { RoomGuard, normalizePolicy } from '../guard.js';
 import { log } from '../log.js';
@@ -9,11 +11,11 @@ export function registerGuardTools(server, ctx) {
 
   server.registerTool('guard_room', {
     title: 'Hold a room as its admin',
-    description: 'The bot joins the room and holds it as its admin, so nobody else can take it or change its password (GifOS 0.9.26). An open room is held by capture: credentials is the path of a GifOS subscription file on the $5 or $10 plan (Settings > Subscription > download). A room with a host (mode admin) is held by signing in with host_password. password: omit to keep the room with no password (any password set is cleared at once); give a value to set it and keep it. blur_all presses Blur guests when the page offers it. greet posts a short welcome for newcomers. Removing someone means setting a password (GifOS keeps no ban list), so a room kept with no password removes nobody. rank orders sibling copies of this bot (same name, password and credentials on other computers; GIFOS_BOT_SIBLING=1 on each): all are admins, rank 0 leads. A handler module (onMessage) answers people; see the README. The credentials file is read here and never returned.',
+    description: 'The bot joins the room and holds it as its admin, so nobody else can take it or change its password (GifOS 0.9.26). An open room is held by capture: credentials is the path of a GifOS credentials GIF that may capture: a subscription file on the $5 or $10 plan (Settings > Subscription > download) or a staff pass. A room with a host (mode admin) is held by signing in with host_password. password: omit to keep the room with no password (any password set is cleared at once); give a value to set it and keep it. blur_all presses Blur guests when the page offers it. greet posts a short welcome for newcomers. Removing someone means setting a password (GifOS keeps no ban list), so a room kept with no password removes nobody. rank orders sibling copies of this bot (same name, password and credentials on other computers; GIFOS_BOT_SIBLING=1 on each): all are admins, rank 0 leads. A handler module (onMessage) answers people; see the README. The credentials file is read here and never returned.',
     inputSchema: {
       link: z.string().url().max(2048).describe('The room link.'),
       mode: z.enum(['open', 'admin']).optional().describe('open (default): hold an open room by capture. admin: a room with a host.'),
-      credentials: z.string().max(1024).optional().describe('Path of the subscription file (GifOS credentials GIF). Needed for an open room.'),
+      credentials: z.string().max(1024).optional().describe('Path of the GifOS credentials GIF (a $5/$10 subscription file or a staff pass). Needed for an open room.'),
       host_password: z.string().min(1).max(200).optional().describe('mode admin: the host password. Used in the bot\'s browser only.'),
       password: z.string().max(200).optional().describe('The room password to keep. Omit to keep the room with none.'),
       blur_all: z.boolean().optional().describe('Press Blur guests when offered (default true).'),
@@ -27,6 +29,27 @@ export function registerGuardTools(server, ctx) {
     const g = await new RoomGuard(ctx, policy, { log }).start();
     guards.set(policy.link, g);
     return ok({ guarding: true, ...g.status() });
+  }));
+
+  server.registerTool('use_credentials', {
+    title: 'Use a GifOS credentials file',
+    description: 'Gives the bot the user\'s GifOS credentials GIF (a subscription file from Settings > Subscription, or a pass), so the bot joins meetings with that plan: a paid room plan, TURN when a network blocks direct links, and "Make me admin" in an open room when the plan may capture. Give path (a file on the computer this server runs on) or gif_b64 (the file\'s bytes, base64). The file is read once and kept in memory; its bytes go only into the bot\'s own browser (its profile keeps it). It is never logged, returned or stored elsewhere. Meetings the bot is in now take it at once when their page allows, else at their next join; every later join uses it. GIFOS_CREDENTIALS=<path> does the same at start. A plan works in one meeting at a time: the bot\'s newest meeting holds it.',
+    inputSchema: {
+      path: z.string().min(1).max(1024).optional().describe('Path of the credentials GIF on this computer.'),
+      gif_b64: z.string().min(16).max(8_000_000).optional().describe('The credentials GIF itself, base64.'),
+    },
+  }, guarded(async ({ path: file, gif_b64: b64 }) => {
+    if (!!file === !!b64) throw new Error('Give either path or gif_b64.');
+    let bytes;
+    if (file) {
+      try { bytes = fs.readFileSync(path.resolve(String(file))); }
+      catch (e) { throw new Error('That file could not be read (' + ((e && e.code) || 'error') + ').'); }
+    } else bytes = Buffer.from(String(b64), 'base64');
+    if (bytes.length < 16 || bytes.subarray(0, 4).toString('latin1') !== 'GIF8') throw new Error('That is not a GIF: a GifOS credentials file is a GIF.');
+    ctx.credentials.set(bytes.toString('base64'));
+    let loaded = 0;
+    for (const m of ctx.meetings.all()) if (m.state === 'live' && (await ctx.credentials.load(m))) loaded++;
+    return ok({ ok: true, loaded_in: loaded, note: 'The bot joins every meeting with these credentials from now on.' });
   }));
 
   server.registerTool('guard_status', {

@@ -3,6 +3,7 @@
 // tool definitions. Tools in tools/shared.js and in each server call these.
 // Everything that touches a browser goes through `bot` (the MeetingBotDriver
 // in driver.js, the WorkerPool in pool.js, or a fake in the unit tests).
+import fs from 'node:fs';
 import path from 'node:path';
 import { publicView, roomFromLink } from './meetings.js';
 import { gifosHostAllowed } from './links.js';
@@ -23,6 +24,26 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   const schedule = scheduleIn || new ScheduleStore(cfg.home);
   const events = eventsIn || new EventLog(cfg.home);
   const secret = [botPassword || ''];
+  // A user's credentials file (GIFOS_CREDENTIALS, or the use_credentials tool): a subscription GIF or a pass. Read once
+  // and kept in memory only; handed to the bot's own browser at each join (room.js guard.credentials), where the page
+  // keeps it in the bot's profile. Never logged, returned or written anywhere else. Rooms a guard holds are skipped:
+  // the guard loads its own file when its rank says (src/guard.js).
+  const cred = { b64: '', guarded: new Set() };
+  if (cfg.credentials) {
+    try { cred.b64 = fs.readFileSync(cfg.credentials).toString('base64'); }
+    catch (e) { log('GIFOS_CREDENTIALS could not be read (' + ((e && e.code) || 'error') + '); meetings join without it'); }
+  }
+  async function loadCredentials(m) {
+    if (!cred.b64 || !m || !m.session_id || cred.guarded.has(m.room)) return false;
+    try { const v = await bot.room(m.session_id, 'guard.credentials', { gif_b64: cred.b64 }); return !!(v && v.loaded); }
+    catch (e) { log('credentials not loaded in ' + m.meeting_id + ': ' + String((e && e.message) || e).slice(0, 120)); return false; }
+  }
+  const credentials = {
+    has: () => !!cred.b64,
+    set: (b64) => { cred.b64 = String(b64 || ''); },
+    guardRoom: (room) => { if (room) cred.guarded.add(room); },
+    load: loadCredentials,
+  };
   // Products hang work on joins and leaves here (gifos-meet-mcp records and
   // archives every meeting). A hook that throws never blocks the join or leave.
   const hooks = { joined: [], leaving: [] };
@@ -174,6 +195,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     await applyVoice();
     if (captions && listen) await captions.start(updated);
     await runHooks('joined', updated);
+    if (cred.b64) await loadCredentials(updated);
     return updated;
   }
 
@@ -397,7 +419,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   return {
     cfg, meetings, bot, captions, transcript, schedule, events, clock, botName,
     secret, secrets, ok, fail, emit, guarded, need, needLive,
-    enter, enterByHand, joinByLink, rememberJoin, depart, stopJoin, holdSeat, holdPhase,
+    credentials, enter, enterByHand, joinByLink, rememberJoin, depart, stopJoin, holdSeat, holdPhase,
     counts, thinkingOf, lastHumanAt, ourNames, nameIn, control, orderView, ensureMeeting, instructionsFor,
     hooks, applyVoice, voiceState: () => ({ ...VOICE, handed: !!(handed && handed.applied), gap: handed && !handed.applied ? handed.gap : null }),
   };
