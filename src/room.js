@@ -172,6 +172,9 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const note = doc.getElementById('capnote'), cb = doc.getElementById('capbtn'), pwb = doc.getElementById('pwbtn'), ba = doc.getElementById('blurall');
         const capOn = vis(note);
         const ids = has(g.rosterIdsNow) ? g.rosterIdsNow() : [];
+        // The seats this page has proven admins: their signed orders verified against the room's admin key (a captured
+        // room's capture key, a host room's host key). A sibling bot is one of them; a name proves nothing (src/guard.js).
+        const admins = new Set((has(g.adminsHere) ? g.adminsHere() : []).map(String));
         return { ok: true, v: {
           supported: !!(note && cb && pwb && M && has(M.useFile)),
           seated: !!(d.me && d.me.state === 3), participants: d.participants || 0, me: d.me ? d.me.peer : null,
@@ -190,7 +193,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
           })(),
           subs_on: !!(M && has(M.enabled) && M.enabled()),
           blur_all: ba ? { offered: vis(ba), on: ba.classList.contains('on') } : null,
-          people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '' })),
+          people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '', admin: admins.has(String(pid)) })),
         } };
       }
       // Load a subscription file (the GifOS credentials GIF) into the bot's browser, so its seat joins with that plan.

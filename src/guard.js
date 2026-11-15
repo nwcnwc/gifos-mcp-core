@@ -13,7 +13,12 @@
 //   Removing someone is setting a password (everyone inside keeps it, the removed person does not get it). GifOS keeps
 //   no ban list, by design: a person can change browsers. So a room held with no password removes nobody; to remove
 //   people, hold the room with a password.
-//   rank        0, 1, ...: SIBLINGS. The same bot (same name, password and credentials; GIFOS_BOT_SIBLING=1 on each) runs on several computers. All of them are the room's admin at once (one subscription key);
+//   rank        0, 1, ...: SIBLINGS. Copies of one guard (the same credentials file, or the same host_password) run on
+//               several computers, each with its own name. A sibling is known by its KEY, never by its name: the page
+//               names a seat an admin only after verifying its signed orders against the room's one admin key (an open
+//               room's capture key, the same check that makes a second session of one pass admin; a room with a host,
+//               the host key). So an admin seat beside this one, while this one is admin too, holds the same key. A
+//               visitor who takes a sibling's name is a visitor. All siblings are the room's admin at once;
 //               the one that holds the subscription's meeting ticket is the LEAD (greets, answers chat). When
 //               the lead's seat is gone the next sibling takes the ticket back, rank 0 first.
 //               A PASS (the staff pass) keeps a ticket in every session of one room (the pay Worker's sameMeeting),
@@ -35,6 +40,10 @@ const TICK_MS = 3000;
 const CAPTURE_EVERY_MS = 8000;
 const RELOAD_EVERY_MS = 30000;
 const GREET_EVERY_MS = 12000;   // an open room's chat is in slow mode: one line per 10 s
+// A newcomer is greeted once it has sat this long and is not an admin: a sibling sits down as a guest and is an admin
+// one guard tick (3 s) after it loads its credentials, plus one page beat (4 s) for its signed orders to reach the lead,
+// plus the lead's next tick (3 s). So a sibling is not greeted, whatever its name.
+const GREET_SETTLE_MS = 10000;
 const RANK_DELAY_MS = 60000;    // with nobody holding the room, rank N waits N x this before taking it
 const SIBLING_GONE_MS = 45000;  // the lead's seat gone this long (+20 s per rank): take the ticket back
 const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
@@ -70,15 +79,18 @@ export function newMemory() {
     role: 'starting', seen: null, queue: [], lastGreet: never, blurGap: false, signinAt: never };
 }
 
-// state: the guard.state op's answer. botName: the bot's own seat name (its siblings carry the same).
+// state: the guard.state op's answer (people[].admin: the page verified that seat's admin key).
 // Returns { role, actions: [{ op, args, why }], greet: [names] | null, events: [{ type, data }] }.
-export function plan(state, policy, mem, now, botName) {
+export function plan(state, policy, mem, now) {
   const out = { role: mem.role, actions: [], greet: null, events: [] };
   const act = (op, args, why) => out.actions.push({ op, args: args || {}, why });
   const setRole = (r, why) => { if (r !== mem.role) out.events.push({ type: 'guard.role', data: { from: mem.role, to: r, why } }); mem.role = r; out.role = r; };
   if (!state || !state.supported) { setRole('unsupported', 'this GifOS site has no room capture yet (it needs 0.9.26 or newer)'); return out; }
   if (!state.seated) { setRole(state.locked_out ? 'locked-out' : 'waiting', state.locked_out ? 'the door asks for a password' : 'not seated yet'); return out; }
-  const sibling = (state.people || []).some((p) => p.id !== state.me && p.name === botName);
+  // A sibling: another seat the page proves an admin while this seat is admin too. The room has one admin key, so it
+  // holds this bot's key. Its name plays no part.
+  const amAdmin = !!(state.host || (state.capture && state.capture.mine));
+  const sibling = amAdmin && (state.people || []).some((p) => p.id !== state.me && p.admin === true);
   if (sibling) mem.siblingSeenAt = now;
   const sub = state.subscription || {};
   const wantPw = policy.password || '';
@@ -102,7 +114,7 @@ export function plan(state, policy, mem, now, botName) {
     const lead = !sibling || (policy.credentials ? !!sub.held : policy.rank === 0);
     setRole(lead ? 'lead' : 'coadmin', lead ? 'host of the room' : 'host of the room beside its sibling');
     fixPassword('the room password is not what the policy says');
-    leadDuties(state, policy, mem, now, botName, lead, act, out);
+    leadDuties(state, policy, mem, now, lead, act, out);
     return out;
   }
 
@@ -131,11 +143,11 @@ export function plan(state, policy, mem, now, botName) {
     if (pwWrong && !mem.pwWrongSince) mem.pwWrongSince = now;
     else if (pwWrong && now - mem.pwWrongSince > 6000) fixPassword('the lead has not fixed the password');
     else if (!pwWrong) mem.pwWrongSince = 0;
-    leadDuties(state, policy, mem, now, botName, false, act, out);
+    leadDuties(state, policy, mem, now, false, act, out);
   } else if (sub.held) {
     setRole('lead', 'admin, holds the meeting ticket');
     fixPassword('the room password is not what the policy says');
-    leadDuties(state, policy, mem, now, botName, true, act, out);
+    leadDuties(state, policy, mem, now, true, act, out);
   } else {
     setRole('coadmin', 'admin by the shared key; a sibling holds the ticket');
     if (pwWrong && now - mem.pwWrongSince > 6000) fixPassword('the lead has not fixed the password');
@@ -149,7 +161,7 @@ export function plan(state, policy, mem, now, botName) {
   return out;
 }
 
-function leadDuties(state, policy, mem, now, botName, lead, act, out) {
+function leadDuties(state, policy, mem, now, lead, act, out) {
   if (policy.blur_all && state.blur_all) {
     if (state.blur_all.offered && !state.blur_all.on) act('guard.blur_all', { on: true }, 'the policy blurs every guest');
     else if (!state.blur_all.offered && !mem.blurGap) { mem.blurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'blur_all', note: 'This GifOS page offers Blur guests only to the host of a room with a host; with no password the room shows no clear video anyway.' } }); }
@@ -159,11 +171,15 @@ function leadDuties(state, policy, mem, now, botName, lead, act, out) {
   if (!mem.seen) { mem.seen = new Set(people.map((p) => p.id)); return; }   // who was here when this bot became the lead: not newcomers
   for (const p of people) {
     if (p.id === state.me) continue;
-    if (!mem.seen.has(p.id) && p.name) { mem.seen.add(p.id); if (p.name !== botName) mem.queue.push(p.name); }
+    if (!mem.seen.has(p.id) && p.name) { mem.seen.add(p.id); mem.queue.push({ id: p.id, name: p.name, at: now }); }
   }
-  if (policy.greet && mem.queue.length && now - mem.lastGreet >= GREET_EVERY_MS) {
+  const admins = new Set(people.filter((p) => p.admin === true).map((p) => p.id));
+  mem.queue = mem.queue.filter((q) => !admins.has(q.id));   // a sibling (or the room's host) is not a newcomer
+  const due = mem.queue.filter((q) => now - q.at >= GREET_SETTLE_MS);
+  if (policy.greet && due.length && now - mem.lastGreet >= GREET_EVERY_MS) {
     mem.lastGreet = now;
-    out.greet = mem.queue.splice(0, mem.queue.length);
+    mem.queue = mem.queue.filter((q) => now - q.at < GREET_SETTLE_MS);
+    out.greet = due.map((q) => q.name);
   }
 }
 
@@ -229,7 +245,7 @@ export class RoomGuard {
         this.meetingId = null; this.mem = Object.assign(newMemory(), { role: 'waiting' });
         return;
       }
-      const p = plan(st, this.policy, this.mem, Date.now(), this.botName());
+      const p = plan(st, this.policy, this.mem, Date.now());
       this.last = { at: new Date().toISOString(), role: p.role, participants: st && st.participants, capture: st && st.capture, password_set: st && st.password_set,
         password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all };
       for (const e of p.events) this.note(e.type, e.data);
@@ -238,7 +254,7 @@ export class RoomGuard {
         try { const v = await this.ctx.bot.room(m.session_id, a.op, args); this.note('guard.action', { op: a.op, why: a.why, ok: true, v: a.op === 'guard.credentials' ? { loaded: !!(v && v.loaded) } : v }); }
         catch (e) { this.note('guard.action', { op: a.op, why: a.why, ok: false, error: String((e && e.message) || e).slice(0, 200) }); }
       }
-      if (p.greet && p.greet.length) await this.sendChat(greetingText(this.policy.greet, p.greet)).then(() => this.note('guard.greeted', { n: p.greet.length }), (e) => { this.mem.queue.unshift(...p.greet); this.note('guard.greet_failed', { text: String(e.message || e).slice(0, 120) }); });
+      if (p.greet && p.greet.length) await this.sendChat(greetingText(this.policy.greet, p.greet)).then(() => this.note('guard.greeted', { n: p.greet.length }), (e) => { this.mem.queue.unshift(...p.greet.map((name) => ({ id: '', name, at: 0 }))); this.note('guard.greet_failed', { text: String(e.message || e).slice(0, 120) }); });
     } finally { this.busy = false; }
   }
   async sendChat(text) {
