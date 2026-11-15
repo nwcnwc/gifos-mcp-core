@@ -25,14 +25,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // A GifOS page joins its meeting with a plan only at that meeting's start, and only while its subscription switch
 // (localStorage 'gifos-subs') reads '1'; the switch is per origin, so one stored '1' put the control meeting's frame on
 // the plan too, and a pass that works in one meeting at a time moved to the control meeting (the guarded room lost its
-// ticket). So every frame of the bot's browser reads the switch through this: '1' in a session frame the host asked to
-// join as a meeting (meet-host 'join' with control false) once the bot holds a plan (PLAN_MARK, set at start from
-// GIFOS_GUARD_CONFIG / GIFOS_CREDENTIALS, or by the first credentials load); no plan or the control meeting: off.
+// ticket, seen live). So every frame of the bot's browser reads the switch through this. In a meeting session frame
+// (meet-host srcdoc) it reads '1' while the bot holds a plan (PLAN_MARK, set at start from GIFOS_GUARD_CONFIG /
+// GIFOS_CREDENTIALS, or by the first credentials load), from the frame's start: the page boots its pass watch at
+// DOMContentLoaded, before the host's 'join' says which meeting this is. Once that 'join' says control, it reads off
+// for good (the control frame never starts a meeting with the plan, so its pass watch has no meeting to join).
+// Any other frame, or no plan: off.
 export const PLAN_MARK = 'gifos-mcp-plan';
-export const SUBS_SWITCH = '(function(){try{var meeting=false;'
-  + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&e.source!==window&&d&&d.op==="join"&&"control" in d)meeting=!d.control;},true);'
+export const SUBS_SWITCH = '(function(){try{var session=location.href==="about:srcdoc",control=false;'
+  + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&e.source!==window&&d&&d.op==="join"&&"control" in d)control=!!d.control;},true);'
   + 'var g=Storage.prototype.getItem;'
-  + 'Storage.prototype.getItem=function(k){if(k==="gifos-subs"){var plan=g.call(this,' + JSON.stringify(PLAN_MARK) + ')==="1";return meeting&&plan?"1":null;}return g.call(this,k);};'
+  + 'Storage.prototype.getItem=function(k){if(k==="gifos-subs"){var plan=g.call(this,' + JSON.stringify(PLAN_MARK) + ')==="1";return session&&!control&&plan?"1":null;}return g.call(this,k);};'
   + '}catch(e){}})();';
 
 // The store listing for one app. Fails when app.json is missing (404) or names a different app, before any store page
