@@ -173,6 +173,23 @@ test('security: a visitor with a sibling\'s NAME but not its key is not a siblin
   assert.equal(r.role, 'held-by-other'); assert.equal(o.siblingSeenAt, 0);
 });
 
+test('a lead that steps down and back up does not greet a sibling that came and went, nor anyone who left', () => {
+  const pass = (people) => st({ capture: { on: true, mine: true }, subscription: { held: true, via: 'pass' }, people });
+  const m = Object.assign(newMemory(), { credLoaded: true });
+  plan(pass([{ id: 'x', name: 'Old' }]), pol({ rank: 1 }), m, 1000);                                   // lead alone
+  plan(pass([{ id: 'x', name: 'Old' }, { id: 'w1', name: B1 }, { id: 'g', name: 'Gus' }]), pol({ rank: 1 }), m, 2000);   // sibling sits as a guest; Gus too
+  let r = plan(pass([{ id: 'x', name: 'Old' }, { id: 'w1', name: B1, admin: true }, { id: 'g', name: 'Gus' }]), pol({ rank: 1 }), m, 5000);
+  assert.equal(r.role, 'coadmin');
+  r = plan(pass([{ id: 'x', name: 'Old' }]), pol({ rank: 1 }), m, 30000);   // the sibling's seat goes (and Gus left)
+  assert.equal(r.role, 'lead'); assert.equal(r.greet, null);
+  r = plan(pass([{ id: 'x', name: 'Old' }]), pol({ rank: 1 }), m, 45000);
+  assert.equal(r.greet, null, 'nobody new is here');
+  // Someone who leaves before the settle is not greeted.
+  plan(pass([{ id: 'x', name: 'Old' }, { id: 'h', name: 'Hal' }]), pol({ rank: 1 }), m, 50000);
+  r = plan(pass([{ id: 'x', name: 'Old' }]), pol({ rank: 1 }), m, 61000);
+  assert.equal(r.greet, null);
+});
+
 test('Blur guests: pressed when offered, a gap event once when not', () => {
   const m = Object.assign(newMemory(), { credLoaded: true });
   const held = (ba) => st({ capture: { on: true, mine: true }, subscription: { held: true }, blur_all: ba });

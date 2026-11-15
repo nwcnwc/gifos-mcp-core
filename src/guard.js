@@ -168,14 +168,15 @@ function leadDuties(state, policy, mem, now, lead, act, out) {
     else if (!state.blur_all.offered && !mem.blurGap) { mem.blurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'blur_all', note: 'This GifOS page offers Blur guests only to the host of a room with a host; with no password the room shows no clear video anyway.' } }); }
   }
   const people = state.people || [];
-  if (!lead) { if (mem.seen) for (const p of people) mem.seen.add(p.id); return; }   // the lead greets them; this bot does not later
+  if (!lead) { if (mem.seen) for (const p of people) mem.seen.add(p.id); mem.queue = []; return; }   // the lead greets them; this bot does not later
   if (!mem.seen) { mem.seen = new Set(people.map((p) => p.id)); return; }   // who was here when this bot became the lead: not newcomers
   for (const p of people) {
     if (p.id === state.me) continue;
     if (!mem.seen.has(p.id) && p.name) { mem.seen.add(p.id); mem.queue.push({ id: p.id, name: p.name, at: now }); }
   }
-  const admins = new Set(people.filter((p) => p.admin === true).map((p) => p.id));
-  mem.queue = mem.queue.filter((q) => !admins.has(q.id));   // a sibling (or the room's host) is not a newcomer
+  // Greet only who is still here and not an admin (a sibling, or the room's host).
+  const guests = new Set(people.filter((p) => p.admin !== true).map((p) => p.id));
+  mem.queue = mem.queue.filter((q) => !q.id || guests.has(q.id));
   const due = mem.queue.filter((q) => now - q.at >= GREET_SETTLE_MS);
   if (policy.greet && due.length && now - mem.lastGreet >= GREET_EVERY_MS) {
     mem.lastGreet = now;
