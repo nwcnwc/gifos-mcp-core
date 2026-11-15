@@ -2,7 +2,7 @@
 // guard.* page ops against a fake GifOS 0.9.26 meeting frame.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { plan, normalizePolicy, newMemory, greetingText, GREETING } from '../../src/guard.js';
+import { plan, normalizePolicy, newMemory, greetingText, GREETING, defaultGreeting } from '../../src/guard.js';
 import { roomPageOp, ROOM_OPS } from '../../src/room.js';
 
 const BOT = 'GifOS Welcome';
@@ -16,9 +16,13 @@ test('policy: an open room needs credentials, a room with a host needs its passw
   assert.throws(() => normalizePolicy({ link: 'https://gifos.app/meet/x' }), /credentials/);
   assert.throws(() => normalizePolicy({ link: 'https://gifos.app/meet/x', mode: 'admin' }), /host_password/);
   const p = pol();
-  assert.equal(p.password, null); assert.equal(p.blur_all, true); assert.equal(p.vote_out, undefined, 'no ban list: removing someone is a password'); assert.equal(p.greet, GREETING); assert.equal(p.rank, 0);
+  assert.equal(p.password, null); assert.equal(p.blur_all, true); assert.equal(p.vote_out, undefined, 'no ban list: removing someone is a password'); assert.equal(p.greet, defaultGreeting(true)); assert.equal(p.rank, 0);
   assert.equal(pol({ password: 'abc' }).password, 'abc');
   assert.equal(pol({ greet: false }).greet, false);
+  assert.ok(!/18\+/.test(GREETING) && !GREETING.includes('Clear video'), 'the base greeting is neutral');
+  assert.ok(pol().greet.includes('Clear video is disabled.'), 'blur_all (default): the greeting says clear video is off');
+  assert.ok(!pol({ blur_all: false }).greet.includes('Clear video'), 'no blur_all: it would not be true');
+  assert.equal(pol({ greet: 'Hi {names}, chess today.' }).greet, 'Hi {names}, chess today.', 'an operator text replaces the default');
 });
 
 test('an open room nobody holds: rank 0 loads the credentials, then takes the room, then clears a password', () => {

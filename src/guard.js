@@ -9,7 +9,7 @@
 //   password    null (default): the room has no password; the bot clears any that appears.
 //               '<value>': the bot sets it and puts it back if it changes.
 //   blur_all    press "Blur guests" when the page offers it to the bot.
-//   greet       true (default text), a text with {names}, or false.
+//   greet       true (default text), a text with {names}, or false. The default says "Clear video is disabled." only with blur_all.
 //   Removing someone is setting a password (everyone inside keeps it, the removed person does not get it). GifOS keeps
 //   no ban list, by design: a person can change browsers. So a room held with no password removes nobody; to remove
 //   people, hold the room with a password.
@@ -28,7 +28,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { roomFromLink } from './links.js';
 
-export const GREETING = 'Welcome, {names}! This is a GifOS public room: be kind, 18+ only. If someone is out of line, tap Vote, then "Vote out of room" on them.';
+export const GREETING = 'Welcome, {names}! This is a GifOS public room: be kind. If someone is out of line, tap Vote, then "Vote out of room" on them.';
+// Said only when the guard blurs everyone (blur_all): otherwise it is not true.
+export const CLEAR_VIDEO_NOTE = 'Clear video is disabled.';
 const TICK_MS = 3000;
 const CAPTURE_EVERY_MS = 8000;
 const RELOAD_EVERY_MS = 30000;
@@ -36,6 +38,11 @@ const GREET_EVERY_MS = 12000;   // an open room's chat is in slow mode: one line
 const RANK_DELAY_MS = 60000;    // with nobody holding the room, rank N waits N x this before taking it
 const SIBLING_GONE_MS = 45000;  // the lead's seat gone this long (+20 s per rank): take the ticket back
 const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
+
+// The default welcome: neutral; it adds the clear-video note only when the guard blurs everyone.
+export function defaultGreeting(blurAll) {
+  return blurAll ? GREETING.replace('be kind.', 'be kind. ' + CLEAR_VIDEO_NOTE) : GREETING;
+}
 
 export function normalizePolicy(p, base) {
   if (!p || typeof p !== 'object') throw new Error('A guard needs a policy object.');
@@ -48,7 +55,7 @@ export function normalizePolicy(p, base) {
     join_password: p.join_password ? String(p.join_password) : (typeof p.password === 'string' ? p.password : ''),
     password: typeof p.password === 'string' && p.password !== '' ? p.password : null,
     blur_all: p.blur_all !== false,
-    greet: p.greet === false ? false : (typeof p.greet === 'string' && p.greet.includes('{names}') ? p.greet : GREETING),
+    greet: p.greet === false ? false : (typeof p.greet === 'string' && p.greet.includes('{names}') ? p.greet : defaultGreeting(p.blur_all !== false)),
     rank: Math.max(0, Math.trunc(Number(p.rank) || 0)),
     handler: rel(p.handler),
   };
