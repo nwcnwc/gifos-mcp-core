@@ -29,6 +29,16 @@ test('a missing Meeting Bot listing fails without asking for any other app', asy
   server.close();
 });
 
+test('a store that cannot be reached is tried again, and a lasting failure is named as that, not as a missing app', async () => {
+  let n = 0;
+  const flaky = async () => { n++; if (n === 1) throw Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNRESET' } }); if (n === 2) return { status: 503, ok: false }; return { status: 200, ok: true, json: async () => ({ appId: 'meeting-bot' }) }; };
+  const slept = [];
+  const listed = await storeAppListing('https://gifos.example', 'meeting-bot', { fetchFn: flaky, sleepFn: async (ms) => { slept.push(ms); } });
+  assert.equal(listed.appId, 'meeting-bot'); assert.equal(n, 3); assert.deepEqual(slept, [2000, 4000]);
+  const down = async () => ({ status: 502, ok: false });
+  await assert.rejects(() => storeAppListing('https://gifos.example', 'meeting-bot', { fetchFn: down, sleepFn: async () => {} }), /Could not reach the GifOS store .*HTTP 502, 4 tries/);
+});
+
 test('a listing whose appId matches is the Meeting Bot app', async () => {
   const { server, url } = await serve((req, res) => {
     res.setHeader('content-type', 'application/json');

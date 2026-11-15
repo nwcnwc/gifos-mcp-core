@@ -21,16 +21,24 @@ import { ROOM_OPS, TURNS_OPS, OLD_SITE, roomPageOp, turnsPageOp } from './room.j
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// The store listing for one app. Fails at once when app.json is missing or
-// names a different app, before any store page is opened.
-export async function storeAppListing(gifosUrl, slug) {
+// The store listing for one app. Fails when app.json is missing (404) or names a different app, before any store page
+// is opened. A failure to REACH the store (network error, timeout, 5xx, 429) is tried again (4 tries over ~14 s) and,
+// if it persists, reported as that, not as a missing app: one blip on a fresh start read "has no meeting-bot app".
+export async function storeAppListing(gifosUrl, slug, { fetchFn = fetch, sleepFn = sleep, tries = 4 } = {}) {
   const base = String(gifosUrl || '').replace(/\/$/, '');
   const listing = base + '/apps/' + encodeURIComponent(slug) + '/app.json';
-  const listed = await fetch(listing).then((r) => r.ok ? r.json() : null).catch(() => null);
-  if (!listed || listed.appId !== slug) {
-    throw new Error('The GifOS store at ' + base + ' has no ' + slug + ' app, or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
+  let why = '';
+  for (let i = 0; i < tries; i++) {
+    if (i) await sleepFn(2000 * 2 ** (i - 1));
+    let r;
+    try { r = await fetchFn(listing, { signal: AbortSignal.timeout(15000) }); }
+    catch (e) { why = String((e && e.cause && e.cause.code) || (e && e.name) || 'network error'); continue; }
+    if (r.status === 429 || r.status >= 500) { why = 'HTTP ' + r.status; continue; }
+    const listed = r.ok ? await r.json().catch(() => null) : null;
+    if (listed && listed.appId === slug) return listed;
+    throw new Error('The GifOS store at ' + base + ' has no ' + slug + ' app (HTTP ' + r.status + '), or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
   }
-  return listed;
+  throw new Error('Could not reach the GifOS store at ' + base + ' (' + why + ', ' + tries + ' tries). Check this computer\'s network and try again.');
 }
 
 // A short silent WAV for the bot's fake microphone, so the bot never opens
