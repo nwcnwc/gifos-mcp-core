@@ -36,7 +36,7 @@ export async function storeAppListing(gifosUrl, slug, { fetchFn = fetch, sleepFn
     if (r.status === 429 || r.status >= 500) { why = 'HTTP ' + r.status; continue; }
     const listed = r.ok ? await r.json().catch(() => null) : null;
     if (listed && listed.appId === slug) return listed;
-    throw new Error('The GifOS store at ' + base + ' has no ' + slug + ' app (HTTP ' + r.status + '), or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot.');
+    throw new Error('The GifOS store at ' + base + ' has no ' + slug + ' app, or this is the wrong build. Set GIFOS_URL to a 0.9.23b or newer site that lists Meeting Bot. (HTTP ' + r.status + ')');
   }
   throw new Error('Could not reach the GifOS store at ' + base + ' (' + why + ', ' + tries + ' tries). Check this computer\'s network and try again.');
 }
