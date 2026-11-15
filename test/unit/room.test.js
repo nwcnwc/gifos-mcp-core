@@ -190,7 +190,7 @@ test('room tools: route to the bot seat, start Take Turns once, and never echo t
   };
   const ok = (v) => ({ content: [{ type: 'text', text: JSON.stringify(v) }] });
   const guarded = (fn) => async (a) => { try { return await fn(a); } catch (e) { return { isError: true, content: [{ type: 'text', text: e.message }] }; } };
-  const ctx = { bot, ok, guarded, secrets: () => [], needLive: (id) => ({ meeting_id: id, session_id: 'w0:mt_1' }) };
+  const ctx = { bot, ok, guarded, secrets: () => [], needLive: (id) => ({ meeting_id: id, session_id: 'w0:mt_1', room: 'r1' }) };
   registerRoomTools({ registerTool: (n, d, fn) => { tools[n] = fn; } }, ctx, { name: 'gifos-meet-mcp' });
   assert.deepEqual(Object.keys(tools).sort(), ['get_agenda', 'guard_room', 'guard_status', 'list_apps', 'next_agenda_item', 'run_app', 'set_agenda', 'sign_in_as_host', 'stage', 'stop_app', 'stop_guard', 'take_turns', 'use_credentials']);
   const st = JSON.parse((await tools.take_turns({ meeting_id: 'm1', action: 'start' })).content[0].text);
@@ -207,7 +207,6 @@ test('room tools: route to the bot seat, start Take Turns once, and never echo t
   const none = await tools.sign_in_as_host({ meeting_id: 'm1' });
   assert.equal(none.isError, true); assert.match(none.content[0].text, /host_password/);
   ctx.hostPasswordFor = (room) => (room === 'r1' ? 's3cret-host' : '');
-  ctx.needLive = (id) => ({ meeting_id: id, session_id: 'w0:mt_1', room: 'r1' });
   const kept = await tools.sign_in_as_host({ meeting_id: 'm1' });
   assert.equal(kept.isError, true, 'the fake refuses it');
   assert.equal(kept.content[0].text.includes('s3cret-host'), false, 'the kept password is cut from the error');
