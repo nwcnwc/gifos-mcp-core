@@ -5,9 +5,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerSharedTools } from './tools/shared.js';
 
-export function createServer({ name, version, ctx, register }) {
+// instructions: the product's briefing for agents (MCP initialize result; clients show it to the model).
+export function createServer({ name, version, ctx, register, instructions }) {
   if (!name || !version) throw new Error('createServer needs a name and a version.');
-  const server = new McpServer({ name, version });
+  const server = new McpServer({ name, version }, instructions ? { instructions: String(instructions) } : undefined);
   registerSharedTools(server, ctx, { name, version });
   if (typeof register === 'function') register(server, ctx);
   server.clock = ctx.clock;

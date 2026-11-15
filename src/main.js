@@ -87,7 +87,7 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
     process.exit(1);
   }
   const { cfg, creds, ctx, bot, captions, hide } = rt;
-  const make = () => createServer({ name, version, ctx, register: product.register });
+  const make = () => createServer({ name, version, ctx, register: product.register, instructions: product.instructions });
   const boot = make();
   ctx.clock.start();
   if (typeof product.onStart === 'function') await product.onStart(ctx, rt);

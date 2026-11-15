@@ -180,3 +180,11 @@ test('use_credentials: takes a path or base64, refuses a non-GIF, never returns 
   assert.equal(v.loaded_in, 1);
   assert.equal(JSON.stringify(r).includes(Buffer.from('GIF89a-user-pass-bytes').toString('base64')), false);
 });
+
+test('a product\'s instructions reach the client at initialize', async () => {
+  const srv = createServer({ name: 'core-test', version: '0.0.0', ctx, register: product, instructions: 'Rooms: open or admin.' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  const c = new Client({ name: 'unit', version: '1' });
+  await Promise.all([srv.connect(a), c.connect(b)]);
+  assert.equal(c.getInstructions(), 'Rooms: open or admin.');
+});
