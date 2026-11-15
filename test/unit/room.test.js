@@ -203,5 +203,14 @@ test('room tools: route to the bot seat, start Take Turns once, and never echo t
   const bad = await tools.sign_in_as_host({ meeting_id: 'm1', host_password: 's3cret-host' });
   assert.equal(bad.isError, true);
   assert.equal(bad.content[0].text.includes('s3cret-host'), false);
+  // No password given: the one this server keeps for the room (ctx.hostPasswordFor), never echoed; none kept: a clear error.
+  const none = await tools.sign_in_as_host({ meeting_id: 'm1' });
+  assert.equal(none.isError, true); assert.match(none.content[0].text, /host_password/);
+  ctx.hostPasswordFor = (room) => (room === 'r1' ? 's3cret-host' : '');
+  ctx.needLive = (id) => ({ meeting_id: id, session_id: 'w0:mt_1', room: 'r1' });
+  const kept = await tools.sign_in_as_host({ meeting_id: 'm1' });
+  assert.equal(kept.isError, true, 'the fake refuses it');
+  assert.equal(kept.content[0].text.includes('s3cret-host'), false, 'the kept password is cut from the error');
+  assert.equal(calls.filter((c) => c[1] === 'host.signin').length, 2);
   assert.match((await tools.stage({ meeting_id: 'm1', action: 'allow' })).content[0].text, /person_id/);
 });

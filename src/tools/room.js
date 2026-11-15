@@ -131,16 +131,19 @@ export function registerRoomTools(server, ctx, { name } = {}) {
 
   server.registerTool('sign_in_as_host', {
     title: 'Sign the bot in as the host',
-    description: 'In a room with a host (made with type admin), signs the bot in with the host password, the way a person uses Admin > Sign in: the bot then has the host controls (agenda, apps, letting people on the stage). The password is used for this call only and never stored, logged or returned; the bot\'s browser keeps the room\'s host key until the bot leaves the meeting.',
+    description: 'In a room with a host (made with type admin), signs the bot in with the host password, the way a person uses Admin > Sign in: the bot then has the host controls (agenda, apps, letting people on the stage). Omit host_password for a room whose password this server made and keeps (create_meeting type admin with no host_password). A password given here is used for this call only and never stored, logged or returned; the bot\'s browser keeps the room\'s host key until the bot leaves the meeting.',
     inputSchema: {
       meeting_id: meetingId,
-      host_password: z.string().min(1).max(200).describe('The host password of this room.'),
+      host_password: z.string().min(1).max(200).optional().describe('The host password of this room. Omit when this server made and keeps it.'),
     },
   }, async ({ meeting_id, host_password }) => {
-    const hide = () => secrets().concat(host_password);
+    let pw = host_password || '';
+    const hide = () => secrets().concat(pw ? [pw] : []);
     try {
       const m = needLive(meeting_id);
-      const v = await room(m, 'host.signin', { password: host_password });
+      if (!pw && typeof ctx.hostPasswordFor === 'function') pw = ctx.hostPasswordFor(m.room) || '';
+      if (!pw) throw new Error('This server keeps no host password for that room: pass host_password (the room\'s admin password).');
+      const v = await room(m, 'host.signin', { password: pw });
       return { content: [{ type: 'text', text: scrub(JSON.stringify({ meeting_id: m.meeting_id, ...v }, null, 2), hide()) }] };
     } catch (e) {
       return { isError: true, content: [{ type: 'text', text: scrub(String((e && e.message) || e), hide()) }] };
