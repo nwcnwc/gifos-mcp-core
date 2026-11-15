@@ -21,6 +21,20 @@ import { ROOM_OPS, TURNS_OPS, OLD_SITE, roomPageOp, turnsPageOp } from './room.j
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The plan (a subscription or pass) rides only in meetings the bot JOINS, never in Meeting Bot's own control meeting.
+// A GifOS page joins its meeting with a plan only at that meeting's start, and only while its subscription switch
+// (localStorage 'gifos-subs') reads '1'; the switch is per origin, so one stored '1' put the control meeting's frame on
+// the plan too, and a pass that works in one meeting at a time moved to the control meeting (the guarded room lost its
+// ticket). So every frame of the bot's browser reads the switch through this: '1' in a session frame the host asked to
+// join as a meeting (meet-host 'join' with control false) once the bot holds a plan (PLAN_MARK, set at start from
+// GIFOS_GUARD_CONFIG / GIFOS_CREDENTIALS, or by the first credentials load); no plan or the control meeting: off.
+export const PLAN_MARK = 'gifos-mcp-plan';
+export const SUBS_SWITCH = '(function(){try{var meeting=false;'
+  + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&e.source!==window&&d&&d.op==="join"&&"control" in d)meeting=!d.control;},true);'
+  + 'var g=Storage.prototype.getItem;'
+  + 'Storage.prototype.getItem=function(k){if(k==="gifos-subs"){var plan=g.call(this,' + JSON.stringify(PLAN_MARK) + ')==="1";return meeting&&plan?"1":null;}return g.call(this,k);};'
+  + '}catch(e){}})();';
+
 // The store listing for one app. Fails when app.json is missing (404) or names a different app, before any store page
 // is opened. A failure to REACH the store (network error, timeout, 5xx, 429) is tried again (4 tries over ~14 s) and,
 // if it persists, reported as that, not as a missing app: one blip on a fresh start read "has no meeting-bot app".
@@ -194,11 +208,8 @@ export class MeetingBotDriver {
     // headless browser's own language (en-US) would make Whisper translate
     // every other language into English.
     init.gifos_cc_lang = captionLang(this.cfg.ccLang);
-    // A guard (GIFOS_GUARD_CONFIG) or a user's credentials file (GIFOS_CREDENTIALS) needs the page's subscription switch
-    // on BEFORE a meeting starts: the page joins its meeting with a subscription or pass only at that start (GifOS
-    // meet-subs.js joinMeeting). Switched on later, a loaded file never reached the meeting: the guard never got the
-    // ticket that offers "Make me admin" until its browser restarted.
-    if (this.cfg.guardConfig || this.cfg.credentials) init['gifos-subs'] = '1';
+    // A guard (GIFOS_GUARD_CONFIG) or a user's credentials file (GIFOS_CREDENTIALS) gives the bot a plan from the start.
+    if (this.cfg.guardConfig || this.cfg.credentials) init[PLAN_MARK] = '1';
     const roles = hostRoles(this.cfg);
     if (roles.length) {
       await ctx.exposeBinding(HOST_BINDING, async (_source, role, payload) => {
@@ -209,6 +220,7 @@ export class MeetingBotDriver {
       });
     }
     await ctx.addInitScript({ content: 'try{var o=' + JSON.stringify(init) + ';for(var k in o)localStorage.setItem(k,o[k]);}catch(e){}' });
+    await ctx.addInitScript({ content: SUBS_SWITCH });
     // GIFOS_MCP_PAY_URL (testing): the payment service a local GifOS stack serves (subscriptions, room capture);
     // the site's own default is the production one.
     const payUrl = String(process.env.GIFOS_MCP_PAY_URL || '');

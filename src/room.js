@@ -197,7 +197,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       case 'guard.credentials': {
         const M = w.GifOS && w.GifOS.meetSubs;
         if (!M || !has(M.useFile)) return { ok: false, error: oldSite };
-        try { w.localStorage.setItem('gifos-subs', '1'); } catch (e) {}
+        try { w.localStorage.setItem('gifos-mcp-plan', '1'); } catch (e) {}   // the bot holds a plan: its meetings' frames switch subscriptions on (driver.js SUBS_SWITCH)
         const bytes = Uint8Array.from(w.atob(String(a.gif_b64 || '')), (c) => c.charCodeAt(0));
         const st = await M.useFile(bytes);
         return { ok: true, v: { loaded: true, status: st && st.status ? st.status : null } };
