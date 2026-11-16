@@ -63,6 +63,24 @@ export function registerSharedTools(server, ctx, { name, version }) {
     const w = await networkWarningOf(bot, m);
     return w ? { warning: w + NETWORK_NOTE } : {};
   };
+  // The meeting page's roster. Meeting Bot's people list is the last event it
+  // cached, which can be this seat alone while the page's own count says
+  // otherwise. Fall back to that list when the page cannot be read.
+  const pageRoster = async (m) => {
+    if (!m || m.state !== 'live' || !m.session_id || typeof bot.room !== 'function') return null;
+    try { return await bot.room(m.session_id, 'room.roster'); } catch (e) { return null; }
+  };
+  const peopleView = async (m, fallback) => {
+    const page = await pageRoster(m);
+    if (!page || !Array.isArray(page.people)) return { people: fallback };
+    const out = { people: page.people };
+    if (page.room_count != null) out.room_count = page.room_count;
+    if (page.alone_while_room_has_others) {
+      out.alone_while_room_has_others = true;
+      if (page.note) out.roster_note = page.note;
+    }
+    return out;
+  };
   server.registerTool('mute', {
     title: 'Mute the bot (stop listening)',
     description: 'Stops captions for this meeting. This tool only stops transcription.',
@@ -273,11 +291,12 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('get_meeting_state', {
     title: 'Who is in the meeting',
-    description: 'Who is in the room, plus hand, microphone, and camera when Meeting Bot reports them. This is the people list. snapshot is the same list plus a PNG of the page. Contract version 1 returns the people list only.',
+    description: 'Who is in the room, from the meeting page\'s own roster, plus hand, microphone, and camera when Meeting Bot reports them. alone_while_room_has_others is set when this seat\'s roster shows only the bot while the room counts more people, or the page says this seat is in a separate part of the meeting. snapshot is the same list plus a PNG of the page. Contract version 1 returns the people list only.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = needLive(meeting_id);
-    const people = typeof bot.people === 'function' ? await bot.people(m.session_id) : null;
+    const fallback = typeof bot.people === 'function' ? await bot.people(m.session_id) : null;
+    const roster = await peopleView(m, fallback);
     let hand = null;
     let mic = null;
     let camera = null;
@@ -298,7 +317,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       meeting_id: m.meeting_id,
       transcribing: !!m.transcribing,
       muted: !!m.muted,
-      people,
+      ...roster,
       hand,
       mic,
       camera,
@@ -313,7 +332,8 @@ export function registerSharedTools(server, ctx, { name, version }) {
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = needLive(meeting_id);
-    const people = typeof bot.people === 'function' ? await bot.people(m.session_id) : null;
+    const fallback = typeof bot.people === 'function' ? await bot.people(m.session_id) : null;
+    const roster = await peopleView(m, fallback);
     let png = null;
     let gap = SNAPSHOT_GAP;
     let shot = null;
@@ -323,7 +343,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       gap = taken && taken.applied ? null : ((taken && taken.gap) || SNAPSHOT_GAP);
       shot = taken && taken.applied ? (taken.result == null ? null : taken.result) : null;
     }
-    const body = ok({ meeting_id: m.meeting_id, people, png, snapshot: shot, gap });
+    const body = ok({ meeting_id: m.meeting_id, ...roster, png, snapshot: shot, gap });
     if (!png) return body;
     let bytes;
     try { bytes = fs.readFileSync(png); } catch (e) { return body; }
@@ -521,6 +541,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
     let mic = null;
     let camera = null;
     if (m.state === 'live' && m.session_id && typeof bot.people === 'function') people = await bot.people(m.session_id);
+    const roster = await peopleView(m, people);
     if (m.state === 'live' && m.session_id && typeof bot.meetingState === 'function') {
       const extra = await bot.meetingState(m.session_id);
       if (extra && extra.applied && extra.result) {
@@ -535,7 +556,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       state: m.state,
       phase: order ? order.phase : m.state,
       link: m.link,
-      people,
+      ...roster,
       transcribing: !!m.transcribing,
       thinking: thinkingOf(m),
       speaking: !!(bot.queue && typeof bot.queue.isSpeaking === 'function' && (bot.queue.isSpeaking(m.meeting_id) || bot.queue.isSpeaking(m.session_id))),

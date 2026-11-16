@@ -137,6 +137,30 @@ test('meeting_status and get_meeting_state warn when the network blocks the meet
   assert.deepEqual(st.people, json(await call('get_meeting_state', { meeting_id: m.meeting_id })).people);
 });
 
+test('get_meeting_state reads the page roster and flags a seat that looks alone while the room does not', async () => {
+  const { bot, call } = await setup();
+  const m = json(await call('test_join', { link: 'https://gifos.app/meet/room-one' }));
+  bot.room = async (_sid, op) => {
+    assert.equal(op, 'room.roster');
+    return {
+      people: [{ id: 'bot', name: 'notes-test', me: true }],
+      room_count: 2,
+      roster_count: 1,
+      alone_while_room_has_others: true,
+      note: 'The bot\'s roster shows only itself, but the room counts 2.',
+    };
+  };
+  const st = json(await call('get_meeting_state', { meeting_id: m.meeting_id }));
+  assert.equal(st.people.length, 1);
+  assert.equal(st.people[0].name, 'notes-test');
+  assert.equal(st.alone_while_room_has_others, true);
+  assert.equal(st.room_count, 2);
+  assert.match(st.roster_note, /room counts 2/);
+  const status = json(await call('meeting_status', { meeting_id: m.meeting_id }));
+  assert.equal(status.alone_while_room_has_others, true);
+  assert.equal(status.people.length, 1);
+});
+
 test('get_transcript labels the bot\'s own lines, live and after the meeting', async () => {
   const { call } = await setup();
   const m = json(await call('test_join', { link: 'https://gifos.app/meet/room-two' }));

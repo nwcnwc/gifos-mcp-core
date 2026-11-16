@@ -39,6 +39,23 @@ function meeting({ old = false, admin = false, canRun = true, hostRoom = true } 
       onStage: () => s.onStage, canStageNow: () => !hostRoom || s.admin,
       setStageForTest: async (on) => { s.onStage = on; s.stagers = on ? s.stagers.concat({ id: 'bot', name: 'Bot', me: true }) : s.stagers.filter((x) => !x.me); },
       grantApp: async (pid, on) => { s.grants.push([pid, on]); },
+      // The page's real host check. A local amAdmin flag (s.admin without
+      // s.confirmed) is not enough: the password is checked again, and host
+      // is reported only when the page says the claim is confirmed.
+      hostClaim: () => ({ local: !!s.admin, confirmed: !!s.confirmed, room_count: s.roomCount == null ? 1 : s.roomCount, island: !!s.island }),
+      recheckHost: async (password) => {
+        s.rechecks = (s.rechecks || 0) + 1;
+        if (!hostRoom) return { confirmed: false, error: 'This meeting has no host (it is an open room), so there is nothing to sign in to.' };
+        if (s.holdProof) return { confirmed: false, error: 'The meeting page did not confirm the host sign-in. The room has not accepted an admin claim yet.' };
+        if (String(password) !== 'host-pw') return { confirmed: false, error: 'That host password did not sign the bot in. The meeting page checked it against this room\'s host key.' };
+        s.admin = true;
+        s.confirmed = true;
+        return { confirmed: true };
+      },
+      myPid: () => 'bot',
+      rosterIdsNow: () => s.roster || [],
+      nameOf: (id) => (id === 'bot' ? 'Meeting notes' : (s.names && s.names[id]) || ''),
+      islandApart: () => !!s.island,
     };
   } else {
     w.__gifosVideo = { statusText: () => '' };
@@ -79,9 +96,13 @@ test('agenda: a guest in a host room is refused with the page\'s words; the host
   assert.match(r.error, /sign_in_as_host/);
   assert.match(r.error, /Only the host can change the agenda/);
   assert.equal((await run(w, 'agenda.next')).ok, false, 'no agenda yet');
-  assert.equal((await run(w, 'host.signin', { password: 'wrong' })).error, 'That host password did not sign the bot in.');
+  assert.match((await run(w, 'host.signin', { password: 'wrong' })).error, /did not sign the bot in/);
+  assert.match((await run(w, 'host.signin', { password: 'wrong' })).error, /host key/);
   assert.equal(ids['adm-pass'].value, '', 'the password does not stay in the field');
-  assert.equal((await run(w, 'host.signin', { password: 'host-pw' })).v.bot_is_host, true);
+  const signed = await run(w, 'host.signin', { password: 'host-pw' });
+  assert.equal(signed.v.bot_is_host, true);
+  assert.equal(signed.v.confirmed, true);
+  assert.equal(s.rechecks >= 2, true, 'a later sign-in checks the page again');
   const set = await run(w, 'agenda.add', { items: [{ title: 'Intro', minutes: 5 }, { title: 'Demo', minutes: 900 }] });
   assert.deepEqual(set.v.added, ['Intro', 'Demo']);
   assert.deepEqual(s.agenda.mins, [5, 600], 'minutes are clamped to the page limit');
@@ -90,6 +111,44 @@ test('agenda: a guest in a host room is refused with the page\'s words; the host
   const nx = await run(w, 'agenda.next');
   assert.equal(nx.v.agenda.cur, 0);
   assert.equal((await run(w, 'agenda.get')).v.agenda.clock, '5:00');
+});
+
+test('a local host flag is not "already signed in": the page must confirm the claim', async () => {
+  const { w, s } = meeting();
+  s.admin = true;
+  s.holdProof = true;
+  const r = await run(w, 'host.signin', { password: 'host-pw' });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /did not confirm the host sign-in/);
+  assert.equal(/Already signed in/.test(r.error), false);
+  assert.equal(s.rechecks, 1, 'the local flag does not skip the page check');
+  const st = await run(w, 'host.state');
+  assert.equal(st.v.bot_is_host, false);
+  assert.equal(st.v.local_flag, true);
+});
+
+test('the page roster flags a seat that looks alone while the room counts more', async () => {
+  const { w, s } = meeting();
+  s.roster = [];
+  s.roomCount = 2;
+  const r = await run(w, 'room.roster');
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.v.people, [{ id: 'bot', name: 'Meeting notes', me: true }]);
+  assert.equal(r.v.room_count, 2);
+  assert.equal(r.v.alone_while_room_has_others, true);
+  assert.match(r.v.note, /room counts 2/);
+  s.roster = ['ada'];
+  s.names = { ada: 'Nathan' };
+  s.roomCount = 2;
+  const together = await run(w, 'room.roster');
+  assert.equal(together.v.alone_while_room_has_others, false);
+  assert.deepEqual(together.v.people.map((p) => p.name), ['Meeting notes', 'Nathan']);
+  s.roster = [];
+  s.roomCount = 1;
+  s.island = true;
+  const island = await run(w, 'room.roster');
+  assert.equal(island.v.alone_while_room_has_others, true);
+  assert.match(island.v.note, /separate part/);
 });
 
 test('host sign-in in an open room says there is no host', async () => {

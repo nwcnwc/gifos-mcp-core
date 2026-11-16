@@ -76,4 +76,47 @@ export async function launchInstalled(launch, opts, cfg, candidates) {
   throw e;
 }
 
+// Chrome refuses a second process on the same profile (SingletonLock).
+// A lock whose pid is dead is removed so the next launch can use the
+// profile. A lock a live process still holds is left alone, and the launch
+// uses a per-process directory instead, so two connectors cannot break
+// each other's joins.
+export const CHROME_LOCK_FILES = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+
+export function lockPid(target) {
+  const m = /-(\d+)$/.exec(String(target || '').replace(/\0/g, '').trim());
+  if (!m) return 0;
+  const n = Number(m[1]);
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
+export function pidAlive(pid) {
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); }
+}
+
+// { dir, cleared, reason }. reason is free, stale, in-use, or unknown-lock.
+export function profileDirForLaunch(dir, opts = {}) {
+  const pid = opts.pid || process.pid;
+  const exists = opts.exists || fs.existsSync;
+  const readlink = opts.readlink || fs.readlinkSync;
+  const unlink = opts.unlink || fs.unlinkSync;
+  const alive = opts.pidAlive || pidAlive;
+  const aside = path.join(path.dirname(dir), path.basename(dir) + '-p' + pid);
+  const lock = path.join(dir, 'SingletonLock');
+  if (!exists(lock)) return { dir, cleared: false, reason: 'free' };
+  let target = '';
+  try { target = readlink(lock); } catch (e) { target = ''; }
+  const holder = lockPid(target);
+  if (holder && alive(holder)) return { dir: aside, cleared: false, reason: 'in-use', holder };
+  if (holder) {
+    for (const name of CHROME_LOCK_FILES) {
+      const p = path.join(dir, name);
+      try { if (exists(p)) unlink(p); } catch (e) {}
+    }
+    return { dir, cleared: true, reason: 'stale', holder };
+  }
+  return { dir: aside, cleared: false, reason: 'unknown-lock' };
+}
+
 export { chromium };

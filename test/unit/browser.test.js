@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { browserCandidates, channelInstalled, launchInstalled, NO_BROWSER } from '../../src/browser.js';
+import { browserCandidates, channelInstalled, launchInstalled, lockPid, profileDirForLaunch, NO_BROWSER } from '../../src/browser.js';
 
 const all = () => true;
 
@@ -65,6 +65,53 @@ test('a channel that is not installed is skipped, not launched (a failed launch 
   const none = await launchInstalled(launch, {}, {}, browserCandidates({}, '', () => false)).then(() => null, (e) => e);
   assert.equal(none.message, NO_BROWSER);
   assert.deepEqual(tried, []);
+});
+
+test('a stale Chrome profile lock is cleared; a live one gets its own directory and is not removed', () => {
+  assert.equal(lockPid('box-4321'), 4321);
+  assert.equal(lockPid('box-4321\0'), 4321);
+  assert.equal(lockPid('not-a-lock'), 0);
+  const removed = [];
+  const exists = (p) => /Singleton(Lock|Socket|Cookie)$/.test(p);
+  const stale = profileDirForLaunch('/home/box/.gifos-mcp/profile-bot', {
+    pid: 77,
+    exists,
+    readlink: () => 'box-4321',
+    unlink: (p) => { removed.push(p); },
+    pidAlive: () => false,
+  });
+  assert.equal(stale.dir, '/home/box/.gifos-mcp/profile-bot');
+  assert.equal(stale.cleared, true);
+  assert.equal(stale.reason, 'stale');
+  assert.deepEqual(removed.map((p) => p.split('/').pop()), ['SingletonLock', 'SingletonSocket', 'SingletonCookie']);
+  const liveRemoved = [];
+  const live = profileDirForLaunch('/home/box/.gifos-mcp/profile-bot', {
+    pid: 77,
+    exists,
+    readlink: () => 'box-4321',
+    unlink: (p) => { liveRemoved.push(p); },
+    pidAlive: (pid) => pid === 4321,
+  });
+  assert.equal(live.dir, '/home/box/.gifos-mcp/profile-bot-p77');
+  assert.equal(live.reason, 'in-use');
+  assert.deepEqual(liveRemoved, []);
+  const unknown = profileDirForLaunch('/home/box/.gifos-mcp/profile-bot', {
+    pid: 77,
+    exists,
+    readlink: () => { throw new Error('not a symlink'); },
+    unlink: () => { throw new Error('must not remove a lock whose owner is unknown'); },
+    pidAlive: () => true,
+  });
+  assert.equal(unknown.dir, '/home/box/.gifos-mcp/profile-bot-p77');
+  assert.equal(unknown.reason, 'unknown-lock');
+  const free = profileDirForLaunch('/home/box/.gifos-mcp/profile-bot', {
+    pid: 77,
+    exists: () => false,
+    readlink: () => { throw new Error('no lock'); },
+    unlink: () => { throw new Error('nothing to remove'); },
+  });
+  assert.equal(free.dir, '/home/box/.gifos-mcp/profile-bot');
+  assert.equal(free.reason, 'free');
 });
 
 test('channels are looked for where Playwright looks for them', () => {

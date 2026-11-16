@@ -131,7 +131,7 @@ export function registerRoomTools(server, ctx, { name } = {}) {
 
   server.registerTool('sign_in_as_host', {
     title: 'Sign the bot in as the host',
-    description: 'In a room with a host (made with type admin), signs the bot in with the host password, the way a person uses Admin > Sign in: the bot then has the host controls (agenda, apps, letting people on the stage). Omit host_password for a room whose password this server made and keeps (create_meeting type admin with no host_password). A password given here is used for this call only and never stored, logged or returned; the bot\'s browser keeps the room\'s host key until the bot leaves the meeting.',
+    description: 'In a room with a host (made with type admin), signs the bot in with the host password, the way a person uses Admin > Sign in. Reports the bot as host only after the meeting page confirms it: the password\'s key matches this room\'s verifier and a signed admin claim exists for the room to check. A local "already host" flag is checked again and is not enough. If the page does not confirm, this returns an error and does not say the bot is host. Omit host_password for a room whose password this server made and keeps (create_meeting type admin with no host_password). A password given here is used for this call only and never stored, logged or returned; the bot\'s browser keeps the room\'s host key until the bot leaves the meeting.',
     inputSchema: {
       meeting_id: meetingId,
       host_password: z.string().min(1).max(200).optional().describe('The host password of this room. Omit when this server made and keeps it.'),

@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { launchInstalled } from './browser.js';
+import { launchInstalled, profileDirForLaunch } from './browser.js';
 import { botPicture } from './profile.js';
 import { log } from './log.js';
 import { VOICE_GAP, INTERJECT_GAP, HAND_GAP, MIC_GAP, CAMERA_GAP, CONTROLS_GAP, SNAPSHOT_GAP } from './voice/settings.js';
@@ -180,8 +180,16 @@ export class MeetingBotDriver {
 
   async launch(profile, audioFile) {
     // The browser already on this computer (Chrome, then Edge); never a download.
-    const dir = path.join(this.cfg.home, profile);
-    const { browser: ctx, used } = await launchInstalled((o) => chromium.launchPersistentContext(dir, o), {
+    // One shared profile unless another live process holds its lock: then this
+    // process gets its own directory, so the two cannot fight over Chrome.
+    const base = path.join(this.cfg.home, profile);
+    fs.mkdirSync(base, { recursive: true, mode: 0o700 });
+    const chosen = profileDirForLaunch(base);
+    if (chosen.dir !== base) fs.mkdirSync(chosen.dir, { recursive: true, mode: 0o700 });
+    const dir = chosen.dir;
+    if (chosen.cleared) log('cleared a stale browser profile lock');
+    if (chosen.reason === 'in-use' || chosen.reason === 'unknown-lock') log('browser profile is in use; this process uses its own');
+    const opts = {
       headless: this.cfg.headless,
       viewport: { width: 1280, height: 800 },
       permissions: ['microphone'],
@@ -195,7 +203,20 @@ export class MeetingBotDriver {
         '--disable-renderer-backgrounding',
         '--disable-backgrounding-occluded-windows',
       ],
-    }, this.cfg);
+    };
+    let launched;
+    try {
+      launched = await launchInstalled((o) => chromium.launchPersistentContext(dir, o), opts, this.cfg);
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if (dir === base && /ProcessSingleton|profile appears to be in use|SingletonLock/i.test(msg)) {
+        const alt = path.join(path.dirname(base), path.basename(base) + '-p' + process.pid);
+        fs.mkdirSync(alt, { recursive: true, mode: 0o700 });
+        log('browser profile is in use; this process uses its own');
+        launched = await launchInstalled((o) => chromium.launchPersistentContext(alt, o), opts, this.cfg);
+      } else throw e;
+    }
+    const { browser: ctx, used } = launched;
     this.browserName = used;
     log('browser: ' + used);
     const init = { gifos_meet_bar: '0', gifos_name: this.creds.name };

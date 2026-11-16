@@ -13,7 +13,7 @@ export const ROOM_OPS = [
   'agenda.get', 'agenda.add', 'agenda.next',
   'app.list', 'app.run', 'app.stop', 'app.state',
   'stage.get', 'stage.set', 'stage.grant',
-  'host.signin', 'host.state',
+  'host.signin', 'host.state', 'room.roster',
   'guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all',
 ];
 
@@ -48,7 +48,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       bot_may_step_up: has(g.canStageNow) ? !!g.canStageNow() : false,
       on_stage: info && Array.isArray(info.stagers) ? info.stagers.map((s) => ({ id: s.id, name: s.name || null, bot: !!s.me })) : [],
       seats: info && info.cap ? info.cap : null,
-      bot_is_host: admin(),
+      bot_is_host: has(g.hostClaim) ? !!((g.hostClaim() || {}).confirmed) : admin(),
     };
   };
   const apps = async () => {
@@ -140,9 +140,51 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         await g.grantApp(pid, !!a.on);
         return { ok: true, v: { person_id: pid, allowed: !!a.on, ...stageState() } };
       }
-      case 'host.state': return { ok: true, v: { bot_is_host: admin(), host_room: !!(w.document.getElementById('admbtn') && w.document.getElementById('admbtn').style.display !== 'none') } };
+      case 'host.state': {
+        const hostRoom = !!(w.document.getElementById('admbtn') && w.document.getElementById('admbtn').style.display !== 'none');
+        if (has(g.hostClaim)) {
+          const c = g.hostClaim() || {};
+          return { ok: true, v: { bot_is_host: !!c.confirmed, host_room: hostRoom, local_flag: !!c.local } };
+        }
+        return { ok: true, v: { bot_is_host: admin(), host_room: hostRoom } };
+      }
+      // The page's roster (occupancy), not Meeting Bot's cached neighbour list,
+      // and the count the room itself shows. alone_while_room_has_others is
+      // the split Nathan hit: this seat lists only itself while the room
+      // counts more, or the page says it is in a separate part of the meeting.
+      case 'room.roster': {
+        const claim = has(g.hostClaim) ? (g.hostClaim() || {}) : {};
+        const ids = has(g.rosterIdsNow) ? (g.rosterIdsNow() || []) : [];
+        const dump = has(g.debugDump) ? (g.debugDump() || {}) : {};
+        const me = has(g.myPid) ? g.myPid() : (dump.me && dump.me.peer) || '';
+        const people = [];
+        const seen = new Set();
+        const add = (pid, mine) => {
+          const id = String(pid || '');
+          if (!id || seen.has(id)) return;
+          seen.add(id);
+          people.push({ id, name: has(g.nameOf) ? (g.nameOf(pid) || '') : '', me: !!mine });
+        };
+        if (me) add(me, true);
+        for (const pid of ids) add(pid, String(pid) === String(me));
+        const roomCount = Number.isFinite(claim.room_count) ? claim.room_count
+          : (Number.isFinite(dump.participants) ? dump.participants : people.length);
+        const island = claim.island === true || (has(g.islandApart) && !!g.islandApart());
+        const alone = people.length <= 1 && (roomCount > people.length || island);
+        const note = alone
+          ? 'The bot\'s roster shows only itself' + (roomCount > people.length ? ', but the room counts ' + roomCount + '.' : ', but the page says part of this meeting is on a network it cannot reach.') + ' This seat may be in a separate part of the meeting, so a host sign-in here is not the seat everyone else sees.'
+          : null;
+        return { ok: true, v: { people, room_count: roomCount, roster_count: people.length, alone_while_room_has_others: alone, note } };
+      }
       case 'host.signin': {
-        if (admin()) return { ok: true, v: { bot_is_host: true, note: 'Already signed in as host.' } };
+        // Always ask the page again. amAdmin() is a local flag set as soon as
+        // a key is stored; it is not the room's confirmation, and "already
+        // signed in" used to return that flag without checking.
+        if (has(g.recheckHost)) {
+          const r = await g.recheckHost(String(a.password || ''));
+          if (!r || !r.confirmed) return { ok: false, error: (r && r.error) || 'The meeting page does not confirm the bot is host.' };
+          return { ok: true, v: { bot_is_host: true, confirmed: true } };
+        }
         const doc = w.document;
         const btn = doc.getElementById('admbtn');
         const pass = doc.getElementById('adm-pass');
@@ -178,7 +220,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         return { ok: true, v: {
           supported: !!(note && cb && pwb && M && has(M.useFile)),
           seated: !!(d.me && d.me.state === 3), participants: d.participants || 0, me: d.me ? d.me.peer : null,
-          admin_room: has(g.hasAdmin) ? !!g.hasAdmin() : false, host: admin(),
+          admin_room: has(g.hasAdmin) ? !!g.hasAdmin() : false, host: has(g.hostClaim) ? !!((g.hostClaim() || {}).confirmed) : admin(),
           capture: { on: capOn, mine: capOn && !!pwb && !pwb.disabled, can_take: vis(cb) && !cb.disabled },
           password_set: has(g.roomPw) ? !!g.roomPw() : null,
           password_ok: has(g.roomPw) ? String(g.roomPw() || '') === String(a.want || '') : null,
