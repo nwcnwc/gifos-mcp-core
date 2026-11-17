@@ -5,6 +5,10 @@
 //   <bin>                 MCP over stdio (what Grok Bot launches)
 //   <bin> --http [port]   MCP over streamable HTTP on 127.0.0.1
 //
+// HTTP mode binds its port FIRST: a second copy on a port in use exits at once (code 1) with no browser and no stores
+// touched, so a leftover server is never joined by a twin. GIFOS_PARENT_PID (or --parent-pid N), when given, ends the
+// server and its browser when that process is gone (opt-in: a daemon started on purpose has no parent to watch).
+//
 // product: { name, version, httpPort, readme, register(server, ctx), onStart?(ctx), onClose?(ctx) }
 import http from 'node:http';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -68,6 +72,32 @@ export async function createRuntime(env = process.env) {
   return { cfg, creds, ctx, bot, captions, hide };
 }
 
+// listen(srv, port) -> resolves once srv holds 127.0.0.1:port; rejects with the listen error (EADDRINUSE: in use).
+export function listen(srv, port, host = '127.0.0.1') {
+  return new Promise((resolve, reject) => {
+    const bad = (e) => { srv.off('listening', ok); reject(e); };
+    const ok = () => { srv.off('error', bad); resolve(srv); };
+    srv.once('error', bad); srv.once('listening', ok);
+    srv.listen(port, host);
+  });
+}
+
+// watchParent(pid, onGone): calls onGone once when process pid no longer exists. Returns a stop function.
+export const PARENT_LOOK_MS = 2000;
+export function watchParent(pid, onGone, { intervalMs = PARENT_LOOK_MS, alive = isAlive } = {}) {
+  const t = setInterval(() => { if (!alive(pid)) { clearInterval(t); onGone(); } }, intervalMs);
+  if (t.unref) t.unref();
+  return () => clearInterval(t);
+}
+function isAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+export function parentPid(argv, env) {
+  const at = argv.indexOf('--parent-pid');
+  const v = Number(at >= 0 ? argv[at + 1] : env.GIFOS_PARENT_PID);
+  return Number.isInteger(v) && v > 1 ? v : 0;
+}
+
 export async function runMain(product, argv = process.argv.slice(2), env = process.env) {
   const { name, version } = product;
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -78,6 +108,25 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
     process.exit(0);
   }
   if (argv.includes('--version')) { process.stdout.write(version + '\n'); process.exit(0); }
+
+  // HTTP: hold the port before anything else (no runtime, no browser yet); requests wait for the runtime with a 503
+  const httpAt = argv.indexOf('--http');
+  let srv = null, handle = null;
+  const port = httpAt >= 0 ? (Number(argv[httpAt + 1]) || product.httpPort) : 0;
+  if (httpAt >= 0) {
+    srv = http.createServer((req, res) => {
+      if (handle) return handle(req, res);
+      res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '2' }).end('{"error":"starting"}');
+    });
+    try {
+      await listen(srv, port);
+    } catch (e) {
+      log(e && e.code === 'EADDRINUSE'
+        ? 'port ' + port + ' on 127.0.0.1 is already in use (another server is running there); this one exits without starting a browser'
+        : 'cannot listen on 127.0.0.1:' + port + ': ' + String((e && e.message) || e));
+      process.exit(1);
+    }
+  }
 
   let rt;
   try {
@@ -111,16 +160,20 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
     ctx.clock.stop();
     if (typeof product.onClose === 'function') await Promise.resolve(product.onClose(ctx)).catch(() => {});
     await bot.close().catch(() => {});
+    if (srv) srv.close();
     process.exit(code);
   }
   process.on('SIGINT', () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
+  const parent = parentPid(argv, env);
+  if (parent) {
+    watchParent(parent, () => { log('parent process ' + parent + ' is gone; shutting down'); shutdown(0); });
+    log('watching parent process ' + parent);
+  }
 
-  const httpAt = argv.indexOf('--http');
-  if (httpAt >= 0) {
-    const port = Number(argv[httpAt + 1]) || product.httpPort;
+  if (srv) {
     const token = env.GIFOS_MCP_HTTP_TOKEN || '';
-    const srv = http.createServer(async (req, res) => {
+    handle = async (req, res) => {
       if (token && req.headers.authorization !== 'Bearer ' + token) {
         res.writeHead(401, { 'content-type': 'application/json' }).end('{"error":"unauthorized"}');
         return;
@@ -141,8 +194,8 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
         log('http request failed: ' + hide(e.message));
         if (!res.headersSent) res.writeHead(500).end();
       }
-    });
-    srv.listen(port, '127.0.0.1', () => log('listening on http://127.0.0.1:' + port + '/mcp'));
+    };
+    log('listening on http://127.0.0.1:' + port + '/mcp');
   } else {
     await boot.connect(new StdioServerTransport());
     process.stdin.on('close', () => shutdown(0));

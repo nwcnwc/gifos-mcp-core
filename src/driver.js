@@ -41,6 +41,20 @@ export const SUBS_SWITCH = '(function(){try{var session=location.href==="about:s
 // The store listing for one app. Fails when app.json is missing (404) or names a different app, before any store page
 // is opened. A failure to REACH the store (network error, timeout, 5xx, 429) is tried again (4 tries over ~14 s) and,
 // if it persists, reported as that, not as a missing app: one blip on a fresh start read "has no meeting-bot app".
+// A call into the meeting page that never answers (a renderer wedged under memory pressure) must not hang the tool
+// that made it, nor pile the next calls up behind it: every page call has a deadline and then fails with a typed
+// timeout (code PAGE_TIMEOUT). Reads answer in milliseconds, so theirs is under an MCP client's 20 s request limit.
+export const READ_DEADLINE_MS = 15000;
+export function withDeadline(p, ms, what) {
+  let t = null;
+  const late = new Promise((_, reject) => {
+    t = setTimeout(() => reject(Object.assign(new Error('The meeting page did not answer (' + what + ') within ' + Math.round(ms / 1000) + ' s.'), { code: 'PAGE_TIMEOUT' })), ms);
+    if (t.unref) t.unref();
+  });
+  return Promise.race([Promise.resolve(p), late]).finally(() => clearTimeout(t));
+}
+const READS = new Set(['people', 'status', 'meetingState', 'snapshot']);
+
 export async function storeAppListing(gifosUrl, slug, { fetchFn = fetch, sleepFn = sleep, tries = 4 } = {}) {
   const base = String(gifosUrl || '').replace(/\/$/, '');
   const listing = base + '/apps/' + encodeURIComponent(slug) + '/app.json';
@@ -478,7 +492,7 @@ export class MeetingBotDriver {
     if (!r.ok) throw new Error('Meeting Bot did not start: ' + r.error);
     const t0 = Date.now();
     while (Date.now() - t0 < this.cfg.timeoutMs) {
-      const st = await this.bot.frame.evaluate(() => window.MeetingBot.status());
+      const st = await withDeadline(this.bot.frame.evaluate(() => window.MeetingBot.status()), this.readMs(), 'status');
       if (st.phase === 'run' && st.connected) return st;
       await sleep(300);
     }
@@ -489,8 +503,9 @@ export class MeetingBotDriver {
   // comes back as an Error with the app's own message.
   async call(method, ...args) {
     await this.ensureStarted();
-    const r = await this.bot.frame.evaluate(({ method, args }) => window.MeetingBot[method](...args)
-      .then((v) => ({ ok: true, v }), (e) => ({ ok: false, error: String((e && e.message) || e) })), { method, args });
+    const r = await withDeadline(this.bot.frame.evaluate(({ method, args }) => window.MeetingBot[method](...args)
+      .then((v) => ({ ok: true, v }), (e) => ({ ok: false, error: String((e && e.message) || e) })), { method, args }),
+    READS.has(method) ? this.readMs() : this.callMs(), method);
     if (!r.ok) throw new Error('Meeting Bot: ' + r.error);
     return r.v;
   }
@@ -536,7 +551,7 @@ export class MeetingBotDriver {
     await this.ensureStarted();
     const r = TURNS_OPS.includes(op)
       ? await this.turnsOp(sessionId, op, args || {})
-      : await this.bot.app.evaluate(roomPageOp, { id: String(sessionId), op, args: args || {}, oldSite: OLD_SITE, waitMs: 15000 });
+      : await withDeadline(this.bot.app.evaluate(roomPageOp, { id: String(sessionId), op, args: args || {}, oldSite: OLD_SITE, waitMs: 15000 }), this.callMs(), op);
     if (!r || !r.ok) throw new Error((r && r.error) || 'The meeting page did not answer.');
     return r.v;
   }
@@ -551,7 +566,7 @@ export class MeetingBotDriver {
     const appEl = sess ? await sess.$('#appmount iframe') : null;
     const appFrame = appEl ? await appEl.contentFrame() : null;
     if (!appFrame) return { ok: false, error: 'No app is running in this meeting. Start Take Turns with take_turns action start.' };
-    return appFrame.evaluate(turnsPageOp, { op, args });
+    return withDeadline(appFrame.evaluate(turnsPageOp, { op, args }), this.callMs(), op);
   }
   async transcribe(sessionId, on) { await this.call('transcribe', sessionId, !!on); }
   async say(sessionId, text) { await this.call('say', sessionId, String(text)); }
@@ -597,11 +612,14 @@ export class MeetingBotDriver {
   }
 
   // The check passes no arguments, so a missing method never receives a payload.
-  async whenMethod(check, gap, invoke) {
+  readMs() { return (this.cfg && this.cfg.readDeadlineMs) || READ_DEADLINE_MS; }
+  callMs() { return (this.cfg && this.cfg.timeoutMs) || 120000; }
+
+  async whenMethod(check, gap, invoke, ms) {
     await this.ensureStarted();
-    const has = await this.bot.frame.evaluate(check);
+    const has = await withDeadline(this.bot.frame.evaluate(check), this.readMs(), 'a method check');
     if (!has) return { applied: false, gap };
-    const result = await invoke();
+    const result = await withDeadline(invoke(), ms || this.callMs(), 'a page call');
     return { applied: true, result: result == null ? null : result };
   }
 
@@ -673,6 +691,7 @@ export class MeetingBotDriver {
       () => typeof (window.MeetingBot && window.MeetingBot.meetingState) === 'function',
       CONTROLS_GAP,
       () => this.bot.frame.evaluate((id) => window.MeetingBot.meetingState(id), sessionId),
+      this.readMs(),
     );
   }
 
@@ -682,6 +701,7 @@ export class MeetingBotDriver {
       () => typeof (window.MeetingBot && window.MeetingBot.snapshot) === 'function',
       SNAPSHOT_GAP,
       () => this.bot.frame.evaluate((id) => window.MeetingBot.snapshot(id), sessionId),
+      this.readMs(),
     );
     let png = '';
     if (this.bot && this.bot.app && typeof this.bot.app.screenshot === 'function') {
