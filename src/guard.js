@@ -33,6 +33,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { roomFromLink } from './links.js';
 import { makeLimiter, suffix } from './log-limit.js';
+import { scrub } from './voice/settings.js';
 
 export const GREETING = 'Welcome, {names}! This is a GifOS public room: be kind. If someone is out of line, tap Vote, then "Vote out of room" on them.';
 // Said only when the guard blurs everyone (blur_all): otherwise it is not true.
@@ -196,6 +197,7 @@ export function greetingText(template, names) {
 export class RoomGuard {
   constructor(ctx, policy, { log, logLimiter } = {}) {
     this.ctx = ctx; this.policy = policy; this.log = log || (() => {});
+    if (typeof ctx.holdSecret === 'function') for (const s of [policy.host_password, policy.password, policy.join_password]) ctx.holdSecret(s || '');   // masked everywhere
     this.logLim = logLimiter || makeLimiter();   // a visitor or chat flood must not flood the journal (src/log-limit.js)
     this.mem = newMemory(); this.meetingId = null; this.timer = null; this.busy = false; this.last = null; this.handler = null;
     this.credB64 = policy.credentials ? fs.readFileSync(policy.credentials).toString('base64') : '';
@@ -218,7 +220,7 @@ export class RoomGuard {
   note(type, data) {
     try { this.ctx.emit({ type, meeting_id: this.meetingId || undefined, data }); } catch (e) {}
     const r = this.logLim.take(type);   // the kind is the event type: chosen here in code, never by the room
-    if (r.ok) this.log(type + ' ' + JSON.stringify(data) + suffix(r));
+    if (r.ok) this.log(scrub(type + ' ' + JSON.stringify(data), [this.policy.host_password, this.policy.password, this.policy.join_password].concat(typeof this.ctx.secrets === 'function' ? this.ctx.secrets() : [])) + suffix(r));
   }
   live() { const m = this.meetingId && this.ctx.meetings.get(this.meetingId); return m && m.state === 'live' && m.session_id ? m : null; }
   async ensureJoined() {

@@ -349,7 +349,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
     description: 'Stores a join order for a link that already exists. room_password is the password guests were given in the invite. The bot joins one minute before start unless early_margin says otherwise. end may be omitted; the stored end is then start plus 8 hours. This call does not join yet and does not send mail. The room password is kept on the schedule and is not returned.',
     inputSchema: {
       link: z.string().url().max(2048).describe('The plain GifOS link from ' + makes + '.'),
-      room_password: z.string().min(1).max(200).describe('The room password guests type. Stored for rejoin. Not returned.'),
+      room_password: z.string().min(1).max(200).describe('The room password guests type. Stored for rejoin. Not returned. Keep it in a secrets vault or other safe storage, never in chat, notes or logs, and read it from there into this argument.'),
       start: z.string().min(1).max(64).describe('When the bot should be in the room, as an ISO time.'),
       end: z.string().max(64).optional().describe('When overrun starts. Omit for start plus 8 hours.'),
       timezone: z.string().max(80).optional().describe('IANA time zone. Default UTC.'),
@@ -431,7 +431,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
       start: z.string().max(64).optional().describe('New start, as an ISO time.'),
       end: z.string().max(64).optional().describe('New end, as an ISO time.'),
       topic: z.string().max(200).optional().describe('New room name.'),
-      room_password: z.string().min(1).max(200).optional().describe('Replaces the stored join password. Not returned.'),
+      room_password: z.string().min(1).max(200).optional().describe('Replaces the stored join password. Not returned. Keep it in a secrets vault or other safe storage, never in chat, notes or logs, and read it from there into this argument.'),
       timezone: z.string().max(80).optional().describe('IANA time zone. Default UTC.'),
       recurrence: z.string().max(500).optional().describe('The calendar recurrence rule, stored as sent. An RRULE this process understands is expanded. Anything else is refused.'),
       early_margin: z.number().int().min(0).optional().describe('Milliseconds before start to join.'),
@@ -474,7 +474,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
     inputSchema: {
       orders: z.array(z.object({
         link: z.string().url().max(2048).describe('The plain GifOS meeting link.'),
-        room_password: z.string().min(1).max(200).describe('The room password guests type. Stored for rejoin. Not returned.'),
+        room_password: z.string().min(1).max(200).describe('The room password guests type. Stored for rejoin. Not returned. Keep it in a secrets vault or other safe storage, never in chat, notes or logs, and read it from there into this argument.'),
         start: z.string().min(1).max(64).describe('When the bot should be in the room, as an ISO time.'),
         end: z.string().max(64).optional().describe('When overrun starts. Omit for start plus 8 hours.'),
         timezone: z.string().max(80).optional().describe('IANA time zone. Default UTC.'),

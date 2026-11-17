@@ -24,6 +24,10 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   const schedule = scheduleIn || new ScheduleStore(cfg.home);
   const events = eventsIn || new EventLog(cfg.home);
   const secret = [botPassword || ''];
+  // Every other password this server holds or is handed (a host password it keeps, a guard's, one given on a call) is
+  // masked like the bot's own: holdSecret(string | () => [string]). In memory only, never written or returned.
+  const held = new Set(), heldFns = [];
+  function holdSecret(s) { if (typeof s === 'function') heldFns.push(s); else if (typeof s === 'string' && s) held.add(s); }
   // A user's credentials file (GIFOS_CREDENTIALS, or the use_credentials tool): a subscription GIF or a pass. Read once
   // and kept in memory only; handed to the bot's own browser at each join (room.js guard.credentials), where the page
   // keeps it in the bot's profile. Never logged, returned or written anywhere else. Rooms a guard holds are skipped:
@@ -82,7 +86,8 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   const nameIn = (m) => (typeof bot.botNameFor === 'function' ? bot.botNameFor(m.session_id) : ourNames()[0]) || 'Meet Bot';
 
   function secrets() {
-    return secret.concat(schedule.all().map((o) => o.room_password).filter(Boolean));
+    const more = []; for (const f of heldFns) { try { more.push(...(f() || [])); } catch (e) {} }
+    return secret.concat(schedule.all().map((o) => o.room_password).filter(Boolean), [...held], more.filter((s) => typeof s === 'string' && s));
   }
   function ok(obj) {
     const raw = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
@@ -418,7 +423,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
 
   return {
     cfg, meetings, bot, captions, transcript, schedule, events, clock, botName,
-    secret, secrets, ok, fail, emit, guarded, need, needLive,
+    secret, secrets, holdSecret, ok, fail, emit, guarded, need, needLive,
     credentials, enter, enterByHand, joinByLink, rememberJoin, depart, stopJoin, holdSeat, holdPhase,
     counts, thinkingOf, lastHumanAt, ourNames, nameIn, control, orderView, ensureMeeting, instructionsFor,
     hooks, applyVoice, voiceState: () => ({ ...VOICE, handed: !!(handed && handed.applied), gap: handed && !handed.applied ? handed.gap : null }),
