@@ -92,7 +92,7 @@ export function publicView(m) {
     start_time: m.start_time,
     link: m.link,
     state: m.state,
-    // 'turn-only': live, but reachable only over TURN (JOIN.1); 'direct' or undefined otherwise
+    // 'turn-only': the meeting page's network banner was up (reachable only over TURN, JOIN.1); absent otherwise
     ...(m.reach ? { reach: m.reach } : {}),
     transcribing: !!m.transcribing,
     muted: !!m.muted,
