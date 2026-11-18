@@ -77,7 +77,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         for (const it of a.items || []) {
           const took = await d.agendaAdd(String(it.title), Math.max(0, Math.min(600, Math.round(Number(it.minutes) || 0))));
           if (!took) {
-            return { ok: false, error: why((added.length ? 'Added ' + added.length + ' items, then ' : '') + 'GifOS did not take "' + it.title + '". In a room with a host only the host may change the agenda: sign the bot in with sign_in_as_host.') };
+            return { ok: false, error: why((added.length ? 'Added ' + added.length + ' items, then ' : '') + 'GifOS did not take "' + it.title + '". In a private meeting only the host may change the agenda: sign the bot in with sign_in_as_host.') };
           }
           added.push(String(it.title));
         }
@@ -96,7 +96,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       case 'app.state': return { ok: true, v: appState() };
       case 'app.run': {
         if (!has(g.runAppForTest)) return { ok: false, error: oldSite };
-        if (has(g.canRunApp) && !g.canRunApp()) return { ok: false, error: why('The bot may not run apps in this meeting. In a room with a host, only the host and people the host allows may.') };
+        if (has(g.canRunApp) && !g.canRunApp()) return { ok: false, error: why('The bot may not run apps in this meeting. In a private meeting, only the host and people the host allows may.') };
         const want = String(a.app || '').trim().toLowerCase();
         const list = await apps();
         const hit = list.find((x) => x.app_id.toLowerCase() === want) || list.find((x) => x.name.toLowerCase() === want)
@@ -127,7 +127,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       case 'stage.set': {
         if (!has(g.setStageForTest)) return { ok: false, error: oldSite };
         const on = !!a.on;
-        if (on && has(g.canStageNow) && !g.canStageNow()) return { ok: false, error: why('The bot may not step on the stage here. In a room with a host, the host has to allow it (or sign the bot in as host).') };
+        if (on && has(g.canStageNow) && !g.canStageNow()) return { ok: false, error: why('The bot may not step on the stage here. In a private meeting, the host has to allow it (or sign the bot in as host).') };
         if (on && stageState().seats && stageState().on_stage.length >= stageState().seats && !stageState().bot_on_stage) return { ok: false, error: 'The stage is full. Someone has to step down first.' };
         await g.setStageForTest(on);
         await until(() => (has(g.onStage) ? !!g.onStage() === on : true), 5000);
@@ -148,7 +148,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const pass = doc.getElementById('adm-pass');
         const go = doc.getElementById('adm-enable');
         if (!btn || !pass || !go) return { ok: false, error: oldSite };
-        if (btn.style.display === 'none') return { ok: false, error: 'This meeting has no host (it is an open room), so there is nothing to sign in to.' };
+        if (btn.style.display === 'none') return { ok: false, error: 'This meeting has no host (it is a public open-floor meeting), so there is nothing to sign in to.' };
         btn.click();
         pass.value = String(a.password || '');
         go.click();
@@ -272,6 +272,6 @@ export function turnsPageOp({ op, args }) {
     return { ok: true, v: read() };
   }
   if (!sel) return { ok: false, error: 'Unknown Take Turns op.' };
-  if (!press(sel)) return { ok: false, error: 'That Take Turns button is not available to the bot right now. In a room with a host, the host leads Take Turns.' };
+  if (!press(sel)) return { ok: false, error: 'That Take Turns button is not available to the bot right now. In a private meeting, the host leads Take Turns.' };
   return { ok: true, v: read() };
 }

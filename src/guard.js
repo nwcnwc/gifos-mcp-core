@@ -70,8 +70,8 @@ export function normalizePolicy(p, base) {
     rank: Math.max(0, Math.trunc(Number(p.rank) || 0)),
     handler: rel(p.handler),
   };
-  if (mode === 'open' && !out.credentials) throw new Error('An open room is held by capture: set credentials to a subscription file on the $5 or $10 plan.');
-  if (mode === 'admin' && !out.host_password) throw new Error('A room with a host needs host_password.');
+  if (mode === 'open' && !out.credentials) throw new Error('A public open-floor meeting (mode open) is held by capture: set credentials to a subscription file on the $5 or $10 plan.');
+  if (mode === 'admin' && !out.host_password) throw new Error('A private meeting (mode admin) needs host_password.');
   return out;
 }
 
@@ -129,7 +129,7 @@ export function plan(state, policy, mem, now) {
       if (now - mem.capOffSince >= policy.rank * RANK_DELAY_MS) { mem.credLoaded = true; act('guard.credentials', {}, 'load the subscription to take the room'); }
     } else if (cap.can_take && now - mem.lastCapture > CAPTURE_EVERY_MS) { mem.lastCapture = now; act('guard.capture', {}, 'take the room ("Make me admin")'); }
     else if (!sub.held && sub.moved && now - mem.lastReload > RELOAD_EVERY_MS) { mem.lastReload = now; act('guard.credentials', {}, 'the subscription\'s ticket is ' + sub.moved + ': join this meeting with it again'); }
-    fixPassword('an open room nobody holds had its password changed; anyone inside may set it');
+    fixPassword('a public open-floor meeting nobody holds had its password changed; anyone inside may set it');
     return out;
   }
   mem.capOffSince = 0;
@@ -166,7 +166,7 @@ export function plan(state, policy, mem, now) {
 function leadDuties(state, policy, mem, now, lead, act, out) {
   if (policy.blur_all && state.blur_all) {
     if (state.blur_all.offered && !state.blur_all.on) act('guard.blur_all', { on: true }, 'the policy blurs every guest');
-    else if (!state.blur_all.offered && !mem.blurGap) { mem.blurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'blur_all', note: 'This GifOS page offers Blur guests only to the host of a room with a host; with no password the room shows no clear video anyway.' } }); }
+    else if (!state.blur_all.offered && !mem.blurGap) { mem.blurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'blur_all', note: 'This GifOS page offers Blur guests only to the host of a private meeting; with no password the room shows no clear video anyway.' } }); }
   }
   const people = state.people || [];
   if (!lead) { if (mem.seen) for (const p of people) mem.seen.add(p.id); mem.queue = []; return; }   // the lead greets them; this bot does not later
