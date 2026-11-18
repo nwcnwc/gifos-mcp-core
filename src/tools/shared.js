@@ -389,7 +389,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('list_schedule', {
     title: 'List scheduled meetings',
-    description: 'Orders in the window, soonest first. Recurrence is expanded inside the window. Rows do not include the room password or the admin password. conflicts lists instants where more orders overlap than the cap.',
+    description: 'Orders in the window, soonest first. Recurrence is expanded inside the window. Rows do not include the room password or the host password. conflicts lists instants where more orders overlap than the cap.',
     inputSchema: {
       from: z.string().max(64).optional().describe('ISO start of the window.'),
       to: z.string().max(64).optional().describe('ISO end of the window.'),
@@ -424,7 +424,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('update_schedule', {
     title: 'Update a scheduled meeting',
-    description: 'When occurrence is omitted, the change applies to the rule and the whole future series. When occurrence is set, only that occurrence changes. A transcript that already exists is not rewritten. The admin password is not accepted.',
+    description: 'When occurrence is omitted, the change applies to the rule and the whole future series. When occurrence is set, only that occurrence changes. A transcript that already exists is not rewritten. The host password is not accepted.',
     inputSchema: {
       schedule_id: z.string().min(3).max(80).describe('The schedule_id from schedule_meeting or list_schedule.'),
       occurrence: z.string().max(80).optional().describe('One occurrence id. Omit to change the whole future series.'),
@@ -511,7 +511,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
 
   server.registerTool('meeting_status', {
     title: 'Status of one meeting',
-    description: 'One meeting, one object: phase, people, whether the bot is thinking, speaking, or listening, and line counts, plus instructions when the meeting has them and a warning when this network blocks the direct connections the meeting needs (then nobody else sees or hears the bot). No room password, admin password, bot password, or model key.',
+    description: 'One meeting, one object: phase, people, whether the bot is thinking, speaking, or listening, and line counts, plus instructions when the meeting has them and a warning when this network blocks the direct connections the meeting needs (then nobody else sees or hears the bot). No room password, host password, bot password, or model key.',
     inputSchema: { meeting_id: meetingId },
   }, guarded(async ({ meeting_id }) => {
     const m = need(meeting_id);

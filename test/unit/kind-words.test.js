@@ -66,3 +66,36 @@ test('the kind field takes the screen words and the old ones as synonyms, and re
   assert.equal(s.parse({}).mode, undefined, 'still optional');
   for (const w of ['public hosted', 'private open-floor', 'hosted public meeting', 'zoom']) assert.equal(s.safeParse({ mode: w }).success, false, w);
 });
+
+// The role is "host" wherever a person or an agent reads it; "admin" stays only as the API value (type / mode "admin",
+// the enum, the admin_password parameter name) and in code. A public open-floor meeting has no host.
+const API_ADMIN = /\b(?:type|mode)[:=]?\s*["'`]?admin\b["'`]?|["'`]admin["'`]|\badmin_password\b|\badmin:|\bfor admin\b|\bopen \/ admin\b|\bopen or admin\b/gi;
+const sayAdmin = (t) => /\badmins?\b|\bco-admins?\b|Make me admin/i.test(String(t).replace(API_ADMIN, ' '));
+// Every string literal with a space in a source file, comment lines dropped: what the tools return or describe.
+function literals(file) {
+  const out = [];
+  fs.readFileSync(new URL('../../src/' + file, import.meta.url), 'utf8').split('\n').forEach((ln, i) => {
+    const t = ln.trim();
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+    for (const m of ln.replace(/\s\/\/\s.*$/, '').matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`/g)) {
+      const v = m[1] ?? m[2] ?? m[3];
+      if (/\s/.test(v)) out.push([file + ':' + (i + 1), v]);
+    }
+  });
+  return out;
+}
+
+test('the role is "host" in every tool text and returned message; admin only as the API value', async () => {
+  for (const [where, text] of textsOf(await tools())) assert.equal(sayAdmin(text), false, where + ' says admin: ' + text);
+  for (const f of ['room.js', 'guard.js', 'tools/room.js', 'tools/guard.js', 'tools/shared.js']) {
+    for (const [where, v] of literals(f)) assert.equal(sayAdmin(v), false, where + ' says admin: ' + v);
+  }
+  assert.equal(sayAdmin('type "admin" and mode admin, admin_password'), false, 'API values pass');
+  assert.equal(sayAdmin('hold it as its admin'), true, 'the role word fails');
+});
+
+test('the kind fields take "host" for admin too', async () => {
+  const { roomKind } = await import('../../src/kind.js');
+  for (const w of ['host', 'Host', 'a host meeting', 'hosted']) assert.equal(roomKind(w), 'admin', w);
+  for (const w of ['public host', 'open-floor host meeting']) assert.notEqual(roomKind(w), 'admin', w);
+});

@@ -266,7 +266,7 @@ test('page ops: state reads capture, password, people; credentials, capture and 
   assert.deepEqual(r.v.subscription, { held: false, via: null, moved: 'moved', tier: null, paid: false });
   const other = frame({ capOn: true, mine: false });
   r = await run(other, 'guard.password', { value: '' });
-  assert.equal(r.ok, false); assert.match(r.error, /admin/);
+  assert.equal(r.ok, false); assert.match(r.error, /host, or whoever took charge/);
   const open = frame();
   r = await run(open, 'guard.capture', {});
   assert.equal(r.ok, true); assert.equal(open.ids.capbtn.clicks, 1);

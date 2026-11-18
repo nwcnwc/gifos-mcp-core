@@ -209,7 +209,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       case 'guard.capture': {
         const b = w.document.getElementById('capbtn');
         if (!b) return { ok: false, error: oldSite };
-        if (b.style.display === 'none' || b.disabled) return { ok: false, error: 'The page does not offer "Make me admin" now (the room is held, or the subscription has no ticket for this meeting yet).' };
+        if (b.style.display === 'none' || b.disabled) return { ok: false, error: 'The page does not offer "Make me host" now (the room is held, or the subscription has no ticket for this meeting yet).' };
         b.click();
         return { ok: true, v: { tapped: true } };
       }
@@ -218,7 +218,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const doc = w.document;
         const b = doc.getElementById('pwbtn'), i = doc.getElementById('pw-new'), s = doc.getElementById('pw-save');
         if (!b || !i || !s) return { ok: false, error: oldSite };
-        if (b.disabled) return { ok: false, error: 'The password belongs to this room\'s admin, and the bot is not it.' };
+        if (b.disabled) return { ok: false, error: 'The password belongs to whoever runs this meeting (its host, or whoever took charge of it), and the bot is not it.' };
         b.click(); i.value = String(a.value || '');
         if (has(s.onclick)) s.onclick(); else s.click();
         i.value = '';
@@ -227,7 +227,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       // "Blur guests": the admin's one room-wide blur.
       case 'guard.blur_all': {
         const b = w.document.getElementById('blurall');
-        if (!b || b.style.display === 'none') return { ok: false, error: 'The page does not offer Blur guests to the bot here (it is an admin-room admin control).' };
+        if (!b || b.style.display === 'none') return { ok: false, error: 'The page does not offer Blur guests to the bot here (it is a host control in a private meeting).' };
         if (b.classList.contains('on') !== !!a.on) b.click();
         return { ok: true, v: { on: b.classList.contains('on') } };
       }

@@ -131,7 +131,7 @@ export function registerRoomTools(server, ctx, { name } = {}) {
 
   server.registerTool('sign_in_as_host', {
     title: 'Sign the bot in as the host',
-    description: 'In a private meeting (made with type admin; it has a host), signs the bot in with the host password, the way a person uses Admin > Sign in: the bot then has the host controls (agenda, apps, letting people on the stage). Omit host_password for a room whose password this server made and keeps (create_meeting type admin with no host_password). A password given here is used for this call only and never stored, logged or returned; the bot\'s browser keeps the room\'s host key until the bot leaves the meeting.',
+    description: 'In a private meeting (made with type admin; it has a host), signs the bot in with the host password, the way a person uses Host > Sign in as host: the bot then has the host controls (agenda, apps, letting people on the stage). Omit host_password for a room whose password this server made and keeps (create_meeting type admin with no host_password). A password given here is used for this call only and never stored, logged or returned; the bot\'s browser keeps the room\'s host key until the bot leaves the meeting.',
     inputSchema: {
       meeting_id: meetingId,
       host_password: z.string().min(1).max(200).optional().describe('The host password of this room. Omit when this server made and keeps it. Keep it in a secrets vault or other safe storage, never in chat, notes or logs, and read it from there into this argument.'),
@@ -143,7 +143,7 @@ export function registerRoomTools(server, ctx, { name } = {}) {
     try {
       const m = needLive(meeting_id);
       if (!pw && typeof ctx.hostPasswordFor === 'function') pw = ctx.hostPasswordFor(m.room) || '';
-      if (!pw) throw new Error('This server keeps no host password for that room: pass host_password (the room\'s admin password).');
+      if (!pw) throw new Error('This server keeps no host password for that room: pass host_password (the room\'s host password).');
       const v = await room(m, 'host.signin', { password: pw });
       return { content: [{ type: 'text', text: scrub(JSON.stringify({ meeting_id: m.meeting_id, ...v }, null, 2), hide()) }] };
     } catch (e) {

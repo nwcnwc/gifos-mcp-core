@@ -127,13 +127,13 @@ export function plan(state, policy, mem, now) {
     setRole('taking', 'nobody holds the room');
     if (!mem.credLoaded) {
       if (now - mem.capOffSince >= policy.rank * RANK_DELAY_MS) { mem.credLoaded = true; act('guard.credentials', {}, 'load the subscription to take the room'); }
-    } else if (cap.can_take && now - mem.lastCapture > CAPTURE_EVERY_MS) { mem.lastCapture = now; act('guard.capture', {}, 'take the room ("Make me admin")'); }
+    } else if (cap.can_take && now - mem.lastCapture > CAPTURE_EVERY_MS) { mem.lastCapture = now; act('guard.capture', {}, 'take charge of the meeting ("Make me host")'); }
     else if (!sub.held && sub.moved && now - mem.lastReload > RELOAD_EVERY_MS) { mem.lastReload = now; act('guard.credentials', {}, 'the subscription\'s ticket is ' + sub.moved + ': join this meeting with it again'); }
     fixPassword('a public open-floor meeting nobody holds had its password changed; anyone inside may set it');
     return out;
   }
   mem.capOffSince = 0;
-  if (!mem.credLoaded) { mem.credLoaded = true; act('guard.credentials', {}, 'the room is held: load the subscription (a sibling\'s key makes the bot co-admin)'); return out; }
+  if (!mem.credLoaded) { mem.credLoaded = true; act('guard.credentials', {}, 'the room is held: load the subscription (a sibling\'s key lets the bot hold it too)'); return out; }
   if (!cap.mine) {
     if (mem.role !== 'held-by-other') out.events.push({ type: 'guard.taken', data: { note: 'Someone else holds this room until their subscription ticket ends; the bot takes it back then.' } });
     setRole('held-by-other', 'another subscriber holds the room');
@@ -141,17 +141,17 @@ export function plan(state, policy, mem, now) {
   }
   if (sub.held && sub.via === 'pass' && sibling && policy.rank > 0) {
     // Every sibling holds the pass's ticket: the lower rank beside this one leads.
-    setRole('coadmin', 'admin by the shared pass; a sibling of lower rank leads');
+    setRole('coadmin', 'holds the meeting by the shared pass; a sibling of lower rank leads');
     if (pwWrong && !mem.pwWrongSince) mem.pwWrongSince = now;
     else if (pwWrong && now - mem.pwWrongSince > 6000) fixPassword('the lead has not fixed the password');
     else if (!pwWrong) mem.pwWrongSince = 0;
     leadDuties(state, policy, mem, now, false, act, out);
   } else if (sub.held) {
-    setRole('lead', 'admin, holds the meeting ticket');
+    setRole('lead', 'leads, holds the meeting ticket');
     fixPassword('the room password is not what the policy says');
     leadDuties(state, policy, mem, now, true, act, out);
   } else {
-    setRole('coadmin', 'admin by the shared key; a sibling holds the ticket');
+    setRole('coadmin', 'holds the meeting by the shared key; a sibling holds the ticket');
     if (pwWrong && now - mem.pwWrongSince > 6000) fixPassword('the lead has not fixed the password');
     else if (pwWrong && !mem.pwWrongSince) mem.pwWrongSince = now;
     if (!sibling && now - (mem.siblingSeenAt || 0) > SIBLING_GONE_MS + policy.rank * 20000 && now - mem.lastReload > RELOAD_EVERY_MS) {
