@@ -61,7 +61,7 @@ export function registerSharedTools(server, ctx, { name, version }) {
   } = ctx;
   const warned = async (m) => {
     const w = await networkWarningOf(bot, m);
-    return w ? { warning: w + NETWORK_NOTE } : {};
+    return w ? { warning: w + NETWORK_NOTE, reach: 'turn-only' } : {};   // the banner is up now: reachable only over TURN (JOIN.1)
   };
   server.registerTool('mute', {
     title: 'Mute the bot (stop listening)',

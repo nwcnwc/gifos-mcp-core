@@ -133,8 +133,19 @@ test('meeting_status and get_meeting_state warn when the network blocks the meet
   const st = json(await call('meeting_status', { meeting_id: m.meeting_id }));
   assert.match(st.warning, /network blocks the direct connections/);
   assert.match(st.warning, /cannot see or hear it/);
+  assert.equal(st.reach, 'turn-only');
   assert.match(json(await call('get_meeting_state', { meeting_id: m.meeting_id })).warning, /network blocks/);
   assert.deepEqual(st.people, json(await call('get_meeting_state', { meeting_id: m.meeting_id })).people);
+});
+
+test('a join under the network banner says reach turn-only; a join without it claims nothing about reach', async () => {
+  const { bot, call } = await setup();
+  const plain = json(await call('test_join', { link: 'https://gifos.app/meet/room-two' }));
+  assert.equal('reach' in plain, false);
+  assert.equal('reach' in json(await call('get_meeting_state', { meeting_id: plain.meeting_id })), false);
+  bot.banner = BANNER;
+  const blocked = json(await call('test_join', { link: 'https://gifos.app/meet/room-three' }));
+  assert.equal(blocked.reach, 'turn-only');
 });
 
 test('get_transcript labels the bot\'s own lines, live and after the meeting', async () => {
