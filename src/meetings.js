@@ -92,6 +92,8 @@ export function publicView(m) {
     start_time: m.start_time,
     link: m.link,
     state: m.state,
+    // 'turn-only': live, but reachable only over TURN (JOIN.1); 'direct' or undefined otherwise
+    ...(m.reach ? { reach: m.reach } : {}),
     transcribing: !!m.transcribing,
     muted: !!m.muted,
     thinking: !!m.thinking,

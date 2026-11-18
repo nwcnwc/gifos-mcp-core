@@ -198,6 +198,17 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     // Each join hands Meet Bot its switches again, so a restarted app is
     // still quiet on its own and speaks only what `say` hands it.
     await applyVoice();
+    // JOIN.1 (2026-11-18): "live" must not hide a bot nobody outside its own network can reach. A host whose page shows
+    // the "People outside your network cannot connect" warning reached the room only over TURN (no direct path): say so,
+    // so the caller tells people why joins may be slow instead of reporting a plain "live".
+    try {
+      const st = typeof bot.status === 'function' ? await bot.status(sessionId) : null;
+      const text = JSON.stringify(st || '');
+      if (/outside your network/i.test(text)) {
+        holdSeat(m.meeting_id, { reach: 'turn-only' });
+        emit({ type: 'meeting.warning', meeting_id: m.meeting_id, data: { text: 'Live, but this bot is reachable only over TURN: people outside its network may take longer to join.' } });
+      } else holdSeat(m.meeting_id, { reach: 'direct' });
+    } catch (e) { /* the status read is advisory; the join stands */ }
     if (captions && listen) await captions.start(updated);
     await runHooks('joined', updated);
     if (cred.b64) await loadCredentials(updated);
