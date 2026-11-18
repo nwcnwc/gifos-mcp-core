@@ -92,9 +92,9 @@ test('agenda: a guest in a host room is refused with the page\'s words; the host
   assert.equal((await run(w, 'agenda.get')).v.agenda.clock, '5:00');
 });
 
-test('host sign-in in an open room says there is no host', async () => {
+test('host sign-in in an open room says no one has taken over as host', async () => {
   const { w } = meeting({ hostRoom: false });
-  assert.match((await run(w, 'host.signin', { password: 'x' })).error, /no host/);
+  assert.match((await run(w, 'host.signin', { password: 'x' })).error, /taken over as host/);
 });
 
 test('apps: lists runnable apps without system apps, runs by name or id, stops only its own', async () => {

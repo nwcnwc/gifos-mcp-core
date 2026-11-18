@@ -148,7 +148,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const pass = doc.getElementById('adm-pass');
         const go = doc.getElementById('adm-enable');
         if (!btn || !pass || !go) return { ok: false, error: oldSite };
-        if (btn.style.display === 'none') return { ok: false, error: 'This meeting has no host (it is a public open-floor meeting), so there is nothing to sign in to.' };
+        if (btn.style.display === 'none') return { ok: false, error: 'No one has taken over as host in this public open-floor meeting, so there is nothing to sign in to.' };
         btn.click();
         pass.value = String(a.password || '');
         go.click();
@@ -161,7 +161,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       }
       // ---- guard: hold a room as its admin (src/guard.js) ----
       // What the bot's seat knows about the room's admin, password and people. An open room's admin is the
-      // subscriber who captured it ("Make me admin"); every page shows the plain note #capnote while a capture holds,
+      // subscriber who captured it ("Make me host"); every page shows the plain note #capnote while a capture holds,
       // and the password button is the captor's alone (disabled for everyone else).
       case 'guard.state': {
         const doc = w.document;
@@ -205,7 +205,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const st = await M.useFile(bytes);
         return { ok: true, v: { loaded: true, status: st && st.status ? st.status : null } };
       }
-      // "Make me admin": the page's own button (shown to a $5/$10 subscriber in an open room nobody holds).
+      // "Make me host": the page's own button (shown to a $5+ subscriber in an open room nobody holds).
       case 'guard.capture': {
         const b = w.document.getElementById('capbtn');
         if (!b) return { ok: false, error: oldSite };
