@@ -100,6 +100,63 @@ test('the lead greets newcomers once they have sat 10 s (not the people already 
   assert.equal(greetingText('Hi {names}!', ['see https://evil.example now']), 'Hi see  now!');
 });
 
+// A rapid second roster id with the same name (a reconnect) is one newcomer. The welcome names them once
+// inside 20 s of first sight, including when both ids are in the room on the same tick. Someone already
+// seated when this bot became the lead is not welcomed again. A different person with that name, first
+// seen after the 20 s window, is welcomed once. A name is not an admin key: this only folds the welcome.
+function greetNames(held, m, people, times) {
+  const out = [];
+  for (const t of times) {
+    const r = plan(held(people(t)), pol(), m, t);
+    if (r.greet) out.push(...r.greet);
+  }
+  return out;
+}
+
+test('one welcome per name in the 20 s after first sight, including a second roster id', () => {
+  const held = (people) => st({ capture: { on: true, mine: true }, subscription: { held: true }, people });
+  const old = { id: 'x', name: 'Old' };
+  const ada = (id, name) => ({ id, name: name || 'Ada' });
+  // Both roster ids are still in the room when the welcome is due. One tick, two ids: one name.
+  const m = Object.assign(newMemory(), { credLoaded: true });
+  plan(held([old]), pol(), m, 0);
+  const both = [old, ada('a1'), ada('a2')];
+  plan(held(both), pol(), m, 3000);
+  let r = plan(held(both), pol(), m, 13000);
+  assert.deepEqual(r.greet, ['Ada'], 'two ids on one tick: one welcome, not Ada and Ada');
+  const more = greetNames(held, m, () => both, [16000, 19000, 22000, 25000]);
+  assert.deepEqual(more, [], 'that name is not welcomed again inside the window');
+
+  // a1 sits, then a2 with the same name arrives a few seconds later. Both stay. One welcome.
+  const m2 = Object.assign(newMemory(), { credLoaded: true });
+  plan(held([old]), pol(), m2, 0);
+  plan(held([old, ada('a1')]), pol(), m2, 1000);
+  r = plan(held([old, ada('a1'), ada('a2', ' ada ')]), pol(), m2, 4000);
+  assert.equal(r.greet, null, 'the second id does not welcome early');
+  const pair = [old, ada('a1'), ada('a2', ' ada ')];
+  const seq = greetNames(held, m2, () => pair, [7000, 11000, 14000, 17000, 20000, 23000, 26000]);
+  assert.deepEqual(seq, ['Ada'], 'a second id in the window is the same welcome');
+  m2.queue.unshift({ id: '', name: 'Ada', at: 0 });   // the send failed: the line is still owed
+  r = plan(held([old, ada('a2')]), pol(), m2, 26000 + 12000);
+  assert.deepEqual(r.greet, ['Ada'], 'a failed welcome is sent again');
+
+  // Already in the room when the lead sat down: a new id of that name inside the window is not a newcomer.
+  const m3 = Object.assign(newMemory(), { credLoaded: true });
+  plan(held([old, ada('a0')]), pol(), m3, 0);
+  const early = greetNames(held, m3, () => [old, ada('a9')], [3000, 13000, 16000, 19000]);
+  assert.deepEqual(early, [], 'a name already in the room is not welcomed again on a new id');
+
+  // After the window, a different person with the same name is welcomed once.
+  const m4 = Object.assign(newMemory(), { credLoaded: true });
+  plan(held([old]), pol(), m4, 0);
+  plan(held([old, ada('a1')]), pol(), m4, 1000);
+  r = plan(held([old, ada('a1')]), pol(), m4, 11000);
+  assert.deepEqual(r.greet, ['Ada']);
+  plan(held([old, ada('b1')]), pol(), m4, 22000);
+  r = plan(held([old, ada('b1')]), pol(), m4, 32000);
+  assert.deepEqual(r.greet, ['Ada'], 'a later person with the same name is welcomed once');
+});
+
 test('a staff pass: every sibling holds a ticket; the lowest rank present leads, the other is co-admin until its seat goes', () => {
   const pass = (people, o) => st(Object.assign({ capture: { on: true, mine: true }, subscription: { held: true, via: 'pass' }, people }, o));
   const mB = Object.assign(newMemory(), { credLoaded: true });

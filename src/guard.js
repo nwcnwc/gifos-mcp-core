@@ -46,6 +46,9 @@ const GREET_EVERY_MS = 12000;   // an open room's chat is in slow mode: one line
 // one guard tick (3 s) after it loads its credentials, plus one page beat (4 s) for its signed orders to reach the lead,
 // plus the lead's next tick (3 s). So a sibling is not greeted, whatever its name.
 const GREET_SETTLE_MS = 10000;
+// A second roster id with the same name inside this window (a reconnect) is the same newcomer. The clock
+// starts at first sight. A different person with that name, first seen after the window, is welcomed once.
+const NAME_WINDOW_MS = 20000;
 const RANK_DELAY_MS = 60000;    // with nobody holding the room, rank N waits N x this before taking it
 const SIBLING_GONE_MS = 45000;  // the lead's seat gone this long (+20 s per rank): take the ticket back
 const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
@@ -163,17 +166,47 @@ export function plan(state, policy, mem, now) {
   return out;
 }
 
+function greetKey(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
 function leadDuties(state, policy, mem, now, lead, act, out) {
   if (policy.blur_all && state.blur_all) {
     if (state.blur_all.offered && !state.blur_all.on) act('guard.blur_all', { on: true }, 'the policy blurs every guest');
     else if (!state.blur_all.offered && !mem.blurGap) { mem.blurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'blur_all', note: 'This GifOS page offers Blur guests only to the host of a private meeting; with no password the room shows no clear video anyway.' } }); }
   }
   const people = state.people || [];
+  if (!mem.named) mem.named = new Map();
   if (!lead) { if (mem.seen) for (const p of people) mem.seen.add(p.id); mem.queue = []; return; }   // the lead greets them; this bot does not later
-  if (!mem.seen) { mem.seen = new Set(people.map((p) => p.id)); return; }   // who was here when this bot became the lead: not newcomers
+  if (!mem.seen) {
+    // Who was here when this bot became the lead: not newcomers. A new id of one of those names inside the
+    // window is the same person reconnecting, so the name is already welcomed.
+    mem.seen = new Set(people.map((p) => p.id));
+    for (const p of people) {
+      if (p.id === state.me || !p.name) continue;
+      const k = greetKey(p.name);
+      if (k) mem.named.set(k, { at: now, id: p.id, greeted: true });
+    }
+    return;
+  }
   for (const p of people) {
-    if (p.id === state.me) continue;
-    if (!mem.seen.has(p.id) && p.name) { mem.seen.add(p.id); mem.queue.push({ id: p.id, name: p.name, at: now }); }
+    if (p.id === state.me || !p.name || mem.seen.has(p.id)) continue;
+    mem.seen.add(p.id);
+    if (p.admin === true) continue;   // a sibling is known by its key, never folded in by name
+    const k = greetKey(p.name);
+    if (!k) continue;
+    const prev = mem.named.get(k);
+    if (prev && now - prev.at < NAME_WINDOW_MS) {
+      prev.id = p.id;
+      if (!prev.greeted) {
+        const row = mem.queue.find((q) => (q.nameKey || greetKey(q.name)) === k);
+        if (row) row.id = p.id;   // the old id leaving must not drop the welcome; keep the first sight time
+        else mem.queue.push({ id: p.id, name: p.name, nameKey: k, at: prev.at });
+      }
+      continue;
+    }
+    mem.named.set(k, { at: now, id: p.id, greeted: false });
+    mem.queue.push({ id: p.id, name: p.name, nameKey: k, at: now });
   }
   // Greet only who is still here and not an admin (a sibling, or the room's host).
   const guests = new Set(people.filter((p) => p.admin !== true).map((p) => p.id));
@@ -181,8 +214,18 @@ function leadDuties(state, policy, mem, now, lead, act, out) {
   const due = mem.queue.filter((q) => now - q.at >= GREET_SETTLE_MS);
   if (policy.greet && due.length && now - mem.lastGreet >= GREET_EVERY_MS) {
     mem.lastGreet = now;
+    const sent = new Set();
+    const names = [];
+    for (const q of due) {
+      const k = q.nameKey || greetKey(q.name);
+      if (k && sent.has(k)) continue;
+      if (k) sent.add(k);
+      names.push(q.name);
+      const rec = k && mem.named.get(k);
+      if (rec) rec.greeted = true;
+    }
     mem.queue = mem.queue.filter((q) => now - q.at < GREET_SETTLE_MS);
-    out.greet = due.map((q) => q.name);
+    out.greet = names;
   }
 }
 
