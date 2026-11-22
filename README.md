@@ -44,6 +44,11 @@ The servers drive the browser already on this computer: `GIFOS_CHROME` if set, e
 Microsoft Edge, else a Chromium that `npx playwright install chromium` installed earlier. They never download
 or install a browser. With none of these the server stops with a message saying what to install.
 
+`GIFOS_BOT_MODE=core` needs no browser. The bot (src/core-driver.js) runs each meeting on the meeting's own core in
+this process, through `@gifos-app/agent`, over WebRTC data channels; Node 22 or later. It reads people, chat and the
+captions people share, posts chat and raises a hand. Voice, camera, recording and room actions answer that they need
+the browser bot.
+
 ## Endpoints and downloads
 
 | What | Where | When | Size |
