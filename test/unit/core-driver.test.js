@@ -52,6 +52,7 @@ test('core bot: join, people, chat, captions, leave, gaps', async () => {
   await assert.rejects(bot.room(id, 'host.signin', {}), (e) => e.message === CORE_ROOM_GAP);
   assert.equal(typeof bot.interject, 'undefined', 'no voice: the tools report the gap');
   assert.equal((await bot.info()).mode, 'core');
+  assert.deepEqual(await bot.meetingState(id), { applied: true, result: { hand: false, mic: false, camera: false } });
   await bot.leave(id);
   await assert.rejects(bot.say(id, 'x'), /not in that meeting any more/);
   assert.ok(log.some((x) => x[0] === 'close'));

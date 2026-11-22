@@ -104,8 +104,13 @@ export class CoreBotDriver {
   async chat(id) { return this.session(id).chat.slice(); }
   async networkWarning() { return ''; }
   async room() { throw new Error(CORE_ROOM_GAP); }
-  async raiseHand(id, on) { const r = await this.session(id).meet.hand(!!on); return { applied: true, up: !!(r && r.up) }; }
-  async meetingState(id) { const st = await this.session(id).meet.state(); return st; }
+  // the browser bot's whenMethod shape: { applied, result } or { applied: false, gap }
+  async raiseHand(id, on) { const r = await this.session(id).meet.hand(!!on); return { applied: true, result: { hand: !!(r && r.up) } }; }
+  async meetingState(id) {
+    const st = await this.session(id).meet.state();
+    const me = (st && st.me) || {};
+    return { applied: true, result: { hand: !!me.hand, mic: me.muted === false, camera: !!me.camera } };
+  }
   async list() { return Array.from(this.sessions.keys()).map((id) => ({ id })); }
   botNames() { return [this.creds.name]; }
   botNameFor() { return this.creds.name; }
