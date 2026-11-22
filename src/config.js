@@ -35,6 +35,9 @@ export function loadConfig(env = process.env) {
     // The bot's picture in rooms: a GIF, PNG, JPEG or WebP file, at most 256 KB.
     botPicture: String(env.GIFOS_BOT_PICTURE || '').trim(),
     sttApp: stt === 'none' ? '' : stt,
+    // GIFOS_BOT_MODE=core: the Meeting Bot with no browser (src/core-driver.js): the meeting's own core in this process.
+    // Text only (chat, the captions people share, people); voice, camera and recording need the browser bot.
+    botMode: String(env.GIFOS_BOT_MODE || '').trim() === 'core' ? 'core' : 'browser',
     headless: env.GIFOS_HEADLESS !== '0',
     chrome: String(env.GIFOS_CHROME || '').trim(),
     botAudio: env.GIFOS_BOT_AUDIO ? path.resolve(String(env.GIFOS_BOT_AUDIO).trim()) : '', // Chromium needs an absolute path

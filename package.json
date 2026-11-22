@@ -19,7 +19,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node test/unit/run.js test/unit/browser.test.js test/unit/profile.test.js test/unit/config.test.js test/unit/links.test.js test/unit/invite.test.js test/unit/shared-tools.test.js test/unit/providers.test.js test/unit/kokoro.test.js test/unit/kokoro-audio.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/store-listing.test.js test/unit/instructions.test.js test/unit/live-chat.test.js test/unit/tool-text.test.js test/unit/live-findings.test.js test/unit/startup.test.js test/unit/recording.test.js test/unit/caption-lang.test.js test/unit/room.test.js test/unit/guard.test.js test/unit/subs-switch.test.js test/unit/guard-rejoin.test.js test/unit/guard-log-limit.test.js test/unit/secret-mask.test.js test/unit/http.test.js test/unit/kind-words.test.js"
+    "test": "node test/unit/run.js test/unit/browser.test.js test/unit/profile.test.js test/unit/config.test.js test/unit/links.test.js test/unit/invite.test.js test/unit/shared-tools.test.js test/unit/providers.test.js test/unit/kokoro.test.js test/unit/kokoro-audio.test.js test/unit/kokoro-cache.test.js test/unit/host-profile.test.js test/unit/wake.test.js test/unit/alloy-voice.test.js test/unit/hallucination.test.js test/unit/schedule.test.js test/unit/store-listing.test.js test/unit/instructions.test.js test/unit/live-chat.test.js test/unit/tool-text.test.js test/unit/live-findings.test.js test/unit/startup.test.js test/unit/recording.test.js test/unit/caption-lang.test.js test/unit/room.test.js test/unit/guard.test.js test/unit/subs-switch.test.js test/unit/guard-rejoin.test.js test/unit/guard-log-limit.test.js test/unit/secret-mask.test.js test/unit/http.test.js test/unit/kind-words.test.js test/unit/core-driver.test.js"
   },
   "keywords": [
     "mcp",
@@ -36,7 +36,8 @@
     "@modelcontextprotocol/sdk": "1.32.1",
     "kokoro-js": "1.2.1",
     "playwright": "1.61.1",
-    "zod": "3.25.76"
+    "zod": "3.25.76",
+    "@gifos-app/agent": "https://codeload.github.com/nwcnwc/gifos-agent/tar.gz/8d428ce"
   },
   "publishConfig": {
     "access": "public"
