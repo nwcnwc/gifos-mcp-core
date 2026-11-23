@@ -46,7 +46,7 @@ export class CoreBotDriver {
     const room = S.roomOf(link);
     const transport = await S.coreTransport(agentLink(link), {
       name: this.creds.name, relay: this.cfg.relay || '', room, password: password || '',
-      profile: path.join(this.cfg.home, 'core-bot'), webrtc: this.opts.webrtc,
+      profile: path.join(this.cfg.home, 'core-bot'), coreKeys: this.cfg.coreKeys && this.cfg.coreKeys.length ? this.cfg.coreKeys : undefined,
     });
     const meet = new S.Meeting(transport, { tts: null });
     meet.core = true;

@@ -44,10 +44,12 @@ The servers drive the browser already on this computer: `GIFOS_CHROME` if set, e
 Microsoft Edge, else a Chromium that `npx playwright install chromium` installed earlier. They never download
 or install a browser. With none of these the server stops with a message saying what to install.
 
-`GIFOS_BOT_MODE=core` needs no browser. The bot (src/core-driver.js) runs each meeting on the meeting's own core in
-this process, through `@gifos-app/agent`, over WebRTC data channels; Node 22 or later. It reads people, chat and the
+`GIFOS_BOT_MODE=core` needs no browser. The bot (src/core-driver.js) runs each meeting on the meeting's own core,
+through `@gifos-app/agent`, over WebRTC data channels; Node 22 or later. It reads people, chat and the
 captions people share, posts chat and raises a hand. Voice, camera, recording and room actions answer that they need
-the browser bot.
+the browser bot. A meeting link is untrusted: only a core signed by GifOS runs, in a child process that cannot write
+files, start programs or read this server's environment (`@gifos-app/agent` docs/core-trust.md). `GIFOS_CORE_KEYS`
+(comma-separated base64 Ed25519 public keys) trusts your own signing key instead, for a core you built yourself.
 
 ## Endpoints and downloads
 

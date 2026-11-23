@@ -37,7 +37,7 @@
     "kokoro-js": "1.2.1",
     "playwright": "1.61.1",
     "zod": "3.25.76",
-    "@gifos-app/agent": "https://codeload.github.com/nwcnwc/gifos-agent/tar.gz/9a203a0304d1a1358abe35e6e695a16d76fa5fc6"
+    "@gifos-app/agent": "https://codeload.github.com/nwcnwc/gifos-agent/tar.gz/74416d22a7ae9c2a9d486283e4d394c417803654"
   },
   "publishConfig": {
     "access": "public"
