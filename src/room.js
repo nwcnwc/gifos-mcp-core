@@ -168,6 +168,8 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const d = has(g.debugDump) ? g.debugDump() : {};
         const M = w.GifOS && w.GifOS.meetSubs;
         const mt = M && has(M.meeting) ? M.meeting() : null;
+        // What the seat may do: the signed line items held now (GifOS.rights(); label is display only). null: an older page.
+        const rights = w.GifOS && has(w.GifOS.rights) ? await w.GifOS.rights().catch(() => null) : null;
         const vis = (el) => !!(el && el.style.display !== 'none');
         const note = doc.getElementById('capnote'), cb = doc.getElementById('capbtn'), pwb = doc.getElementById('pwbtn'), ba = doc.getElementById('blurall');
         const capOn = vis(note);
@@ -192,6 +194,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
             return { held: sh || ph, via: sh ? 'sub' : ph ? 'pass' : null, pass: !!pm, moved: sh || ph ? null : ((pm && pm.moved) || (mt && mt.moved) || null),
               tier: (mt && mt.tier) || (ph ? 'pass' : null), paid: !!(mt && mt.paid) || ph };
           })(),
+          rights,
           subs_on: !!(M && has(M.enabled) && M.enabled()),
           blur_all: ba ? { offered: vis(ba), on: ba.classList.contains('on') } : null,
           people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '', admin: admins.has(String(pid)) })),
