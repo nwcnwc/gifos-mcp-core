@@ -256,7 +256,9 @@ export class RoomGuard {
       }
       const p = plan(st, this.policy, this.mem, Date.now());
       this.last = { at: new Date().toISOString(), role: p.role, participants: st && st.participants, capture: st && st.capture, password_set: st && st.password_set,
-        password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all };
+        password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all,
+        // For a sibling's updater (gifos-meet-mcp scripts/self-update.sh): restart only while a sibling holds the room.
+        seated: !!(st && st.seated), sibling_seen_at: this.mem.siblingSeenAt ? new Date(this.mem.siblingSeenAt).toISOString() : null };
       for (const e of p.events) this.note(e.type, e.data);
       for (const a of p.actions) {
         const args = a.op === 'guard.credentials' ? { gif_b64: this.credB64 } : a.args;
