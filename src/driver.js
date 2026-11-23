@@ -21,21 +21,20 @@ import { ROOM_OPS, TURNS_OPS, OLD_SITE, roomPageOp, turnsPageOp } from './room.j
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// The plan (a subscription or pass) rides only in meetings the bot JOINS, never in Meeting Bot's own control meeting.
-// A GifOS page joins its meeting with a plan only at that meeting's start, and only while its subscription switch
-// (localStorage 'gifos-subs') reads '1'; the switch is per origin, so one stored '1' put the control meeting's frame on
-// the plan too, and a pass that works in one meeting at a time moved to the control meeting (the guarded room lost its
-// ticket, seen live). So every frame of the bot's browser reads the switch through this. In a meeting session frame
-// (meet-host srcdoc) it reads '1' while the bot holds a plan (PLAN_MARK, set at start from GIFOS_GUARD_CONFIG /
-// GIFOS_CREDENTIALS, or by the first credentials load), from the frame's start: the page boots its pass watch at
-// DOMContentLoaded, before the host's 'join' says which meeting this is. Once that 'join' says control, it reads off
-// for good (the control frame never starts a meeting with the plan, so its pass watch has no meeting to join).
-// Any other frame, or no plan: off.
-export const PLAN_MARK = 'gifos-mcp-plan';
-export const SUBS_SWITCH = '(function(){try{var session=location.href==="about:srcdoc",control=false;'
-  + 'addEventListener("message",function(e){var d=e.data;if(e.source===parent&&e.source!==window&&d&&d.op==="join"&&"control" in d)control=!!d.control;},true);'
-  + 'var g=Storage.prototype.getItem;'
-  + 'Storage.prototype.getItem=function(k){if(k==="gifos-subs"){var plan=g.call(this,' + JSON.stringify(PLAN_MARK) + ')==="1";return session&&!control&&plan?"1":null;}return g.call(this,k);};'
+// The plan (a subscription or pass) rides only in meetings the bot JOINS, never in Meeting Bot's own sessions (its
+// control meeting, its probe and remote seats). A GifOS page joins every meeting it starts with the plan its browser
+// holds (subscriptions are always on in meetings since 0.9.26), and a pass that works in one meeting at a time then
+// moves to whichever meeting joined last: each bot's control meeting took the staff pass from the guarded room (seen
+// live 2026-11-23: both welcome bots lost their ticket two minutes after a restart). The plan is the browser's copy of
+// the credentials file (meet-subs CRED_KEY, WALLET_KEY): every frame of the bot's browser reads it through this gate.
+// A meeting session frame (meet-host srcdoc) reads it only once the host's 'join' has said the session is not Meeting
+// Bot's own (control false); until then, and for good after a control join, it reads nothing. Any other frame (the
+// desk, Meeting Bot's app frame) reads it as it is.
+export const PLAN_KEYS = ['gifos-sub-cred', 'gifos-pass-wallet'];
+export const PLAN_GATE = '(function(){try{var session=location.href==="about:srcdoc",said=false,open=false;'
+  + 'addEventListener("message",function(e){var d=e.data;if(!said&&e.source===parent&&e.source!==window&&d&&d.op==="join"){said=true;open=!d.control;}},true);'
+  + 'var keys=' + JSON.stringify(PLAN_KEYS) + ',g=Storage.prototype.getItem;'
+  + 'Storage.prototype.getItem=function(k){if(session&&!open&&keys.indexOf(k)>=0)return null;return g.call(this,k);};'
   + '}catch(e){}})();';
 
 // The store listing for one app. Fails when app.json is missing (404) or names a different app, before any store page
@@ -278,8 +277,6 @@ export class MeetingBotDriver {
     // headless browser's own language (en-US) would make Whisper translate
     // every other language into English.
     init.gifos_cc_lang = captionLang(this.cfg.ccLang);
-    // A guard (GIFOS_GUARD_CONFIG) or a user's credentials file (GIFOS_CREDENTIALS) gives the bot a plan from the start.
-    if (this.cfg.guardConfig || this.cfg.credentials) init[PLAN_MARK] = '1';
     const roles = hostRoles(this.cfg);
     if (roles.length) {
       await ctx.exposeBinding(HOST_BINDING, async (_source, role, payload) => {
@@ -290,7 +287,7 @@ export class MeetingBotDriver {
       });
     }
     await ctx.addInitScript({ content: 'try{var o=' + JSON.stringify(init) + ';for(var k in o)localStorage.setItem(k,o[k]);}catch(e){}' });
-    await ctx.addInitScript({ content: SUBS_SWITCH });
+    await ctx.addInitScript({ content: PLAN_GATE });
     // GIFOS_MCP_PAY_URL (testing): the payment service a local GifOS stack serves (subscriptions, room capture);
     // the site's own default is the production one.
     const payUrl = String(process.env.GIFOS_MCP_PAY_URL || '');

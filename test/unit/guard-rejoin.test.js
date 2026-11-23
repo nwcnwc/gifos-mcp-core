@@ -46,3 +46,25 @@ test('a guard whose meeting session vanished (a site deploy) takes its seat agai
   const errs = ctx.emitted.filter((e) => e.type === 'guard.error').length;
   assert.ok(errs <= 1, 'no error every tick: ' + errs);
 });
+
+test('guard.rejoin (a pass that moved away): the guard leaves the room and joins it again, keeping its retake clock', async () => {
+  const ctx = fakeCtx();
+  let lost = true;
+  ctx.departed = 0;
+  ctx.depart = async (m) => { ctx.departed++; ctx.holdSeat(m.meeting_id, { state: 'ended', session_id: null }); };
+  const room = ctx.bot.room;
+  ctx.bot.room = async (sid, op, args) => {
+    if (op === 'guard.state' && lost) return { supported: true, seated: true, me: 'me', capture: { on: true, mine: true }, subscription: { held: false, via: null, pass: true, moved: 'moved' }, people: [], blur_all: null };
+    return room(sid, op, args);
+  };
+  const g = new RoomGuard(ctx, normalizePolicy({ link: 'https://gifos.app/meet/welcome', credentials: new URL(import.meta.url).pathname, greet: false }, '/'));
+  await g.tick();   // joins, loads the credentials (the room is held by its key)
+  await g.tick();   // the pass's ticket is gone: a fresh join
+  assert.equal(ctx.departed, 1, 'left the room');
+  assert.ok(ctx.emitted.some((e) => e.type === 'guard.retake'));
+  lost = false;
+  await g.tick();   // joins again
+  assert.equal(ctx.joins, 2);
+  assert.equal(ctx.meetings.get('m1').session_id, 'mt_2');
+  assert.ok(Number.isFinite(g.mem.lastRetake), 'the retake clock survives the new seat (no rejoin storm)');
+});

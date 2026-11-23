@@ -127,6 +127,37 @@ test('a staff pass: every sibling holds a ticket; the lowest rank present leads,
   assert.equal(r.role, 'lead');
 });
 
+// Seen live 2026-11-23 (both welcome bots after a restart): the staff pass's ticket moved to another meeting on both
+// siblings. Rank 0 sat as co-admin ("a sibling holds the ticket") and rank 1 as co-admin ("a sibling of lower rank
+// leads"): nobody led or greeted, then the capture ran out and both reloaded the file every 30 s, which never takes a
+// moved pass back. A moved pass is retaken only by a fresh join of the room.
+test('a staff pass whose ticket moved: each sibling joins the room again (not a reload), whatever its rank', () => {
+  const lost = (people, cap) => st({ capture: cap || { on: true, mine: true }, subscription: { held: false, via: null, pass: true, moved: 'moved' }, people });
+  const sib = [{ id: 'b', name: B2, admin: true }];
+  for (const rank of [0, 1]) {
+    const m = Object.assign(newMemory(), { credLoaded: true });
+    let r = plan(lost(sib), pol({ rank }), m, 1000);
+    assert.equal(r.role, 'coadmin', 'rank ' + rank + ': no ticket, not the lead yet');
+    assert.deepEqual(ops(r), ['guard.rejoin'], 'rank ' + rank + ': takes the pass back with a fresh join');
+    assert.ok(r.events.some((e) => e.type === 'guard.retake'));
+    r = plan(lost(sib), pol({ rank }), m, 30000);
+    assert.deepEqual(ops(r), [], 'one fresh join a minute');
+    r = plan(lost(sib), pol({ rank }), m, 62000);
+    assert.deepEqual(ops(r), ['guard.rejoin']);
+  }
+  // The capture ran out too (nobody renewed it): still a fresh join, never the no-op reload.
+  const m = Object.assign(newMemory(), { credLoaded: true });
+  const r = plan(lost([], { on: false, mine: false, can_take: false }), pol({ rank: 0 }), m, 1000);
+  assert.equal(r.role, 'taking'); assert.deepEqual(ops(r), ['guard.rejoin']);
+  // Back with the ticket: rank 0 leads beside its sibling.
+  const back = plan(st({ capture: { on: true, mine: true }, subscription: { held: true, via: 'pass', pass: true }, people: sib }), pol({ rank: 0 }), m, 90000);
+  assert.equal(back.role, 'lead');
+  // A subscription's moved ticket is still taken back by loading the file (the page joins a subscription again then).
+  const ms = Object.assign(newMemory(), { credLoaded: true });
+  const rs = plan(st({ subscription: { held: false, via: null, pass: false, moved: 'moved' } }), pol({ rank: 0 }), ms, 1000);
+  assert.deepEqual(ops(rs), ['guard.credentials']);
+});
+
 test('siblings with different names: one key, one lead and one co-admin (pass and subscription)', () => {
   // Pass: both hold a ticket. Each sees the other as an admin seat (the page verified the shared key).
   const pass = (people) => st({ capture: { on: true, mine: true }, subscription: { held: true, via: 'pass' }, people });
@@ -260,10 +291,10 @@ test('page ops: state reads capture, password, people; credentials, capture and 
   const ms = pf.doc.querySelectorAll()[0].contentWindow.GifOS.meetSubs;
   ms.meeting = () => ({ held: false, moved: null, tier: null, paid: false }); ms.passMeeting = () => ({ held: true, moved: null });
   r = await run(pf, 'guard.state', { want: '' });
-  assert.deepEqual(r.v.subscription, { held: true, via: 'pass', moved: null, tier: 'pass', paid: true });
+  assert.deepEqual(r.v.subscription, { held: true, via: 'pass', pass: true, moved: null, tier: 'pass', paid: true });
   ms.passMeeting = () => ({ held: false, moved: 'moved' });
   r = await run(pf, 'guard.state', { want: '' });
-  assert.deepEqual(r.v.subscription, { held: false, via: null, moved: 'moved', tier: null, paid: false });
+  assert.deepEqual(r.v.subscription, { held: false, via: null, pass: true, moved: 'moved', tier: null, paid: false }, 'a lost pass still says a pass rides here');
   const other = frame({ capOn: true, mine: false });
   r = await run(other, 'guard.password', { value: '' });
   assert.equal(r.ok, false); assert.match(r.error, /host, or whoever took charge/);
