@@ -1,5 +1,6 @@
-// The two kinds of GifOS meeting. The code, the links and the API say open / admin; the GifOS screens say
-// "Start a public open-floor meeting" (open) and "Host a private meeting" (admin: a private, hosted meeting).
+// The two kinds of GifOS meeting. The code, the links and the API say open / admin; the GifOS lobby's tabs say
+// "Open" (a public open-floor meeting) and "Host" (admin: a private, hosted meeting; "Host a private meeting" on
+// the Invite sheet; older pages said "Start a public open-floor meeting").
 // "public" and "open-floor" name one kind, "private" and "hosted" the other; there are only these two.
 // roomKind maps the screen words and the older ones to open / admin, and leaves anything else (a phrase that mixes
 // the two kinds, or another word) as it is, so the enum refuses it.

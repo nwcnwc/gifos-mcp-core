@@ -4,7 +4,7 @@
 //   mode        'open'  an open room: the bot CAPTURES it ("Make me host") with a subscription file on a $5+
 //                       plan, so nobody else can take it or set its password (GifOS 0.9.26).
 //               'admin' a room with a host: the bot signs in as its host with host_password.
-//   credentials path of the subscription file (the GifOS credentials GIF people export from Settings > Subscription).
+//   credentials path of the subscription file (the GifOS credentials GIF people export from a meeting's More > Subscription).
 //               Read once at start; its bytes go only into the bot's own browser. Never logged or returned.
 //   password    null (default): the room has no password; the bot clears any that appears.
 //               '<value>': the bot sets it and puts it back if it changes.

@@ -8,7 +8,7 @@ assistant that called the tool sends it through its own (or the user's) mail or 
 
 | Field | What it is |
 |---|---|
-| `kind` | `meeting`, `town_hall`, `broadcast` or `stream` |
+| `kind` | `meeting` or `broadcast` |
 | `title` | The title |
 | `start`, `end` | `{ iso, timezone, local }`, or `null` when no time was given. `end` defaults to start plus one hour. |
 | `timezone` | The IANA zone the local times are written in |
