@@ -302,3 +302,14 @@ test('page ops: state reads capture, password, people; credentials, capture and 
   r = await run(open, 'guard.capture', {});
   assert.equal(r.ok, true); assert.equal(open.ids.capbtn.clicks, 1);
 });
+
+test('guard.state reports rights from GifOS.rights()', async () => {
+  const fr = frame();
+  let r = await run(fr, 'guard.state', { want: '' });
+  assert.equal(r.ok, true);
+  assert.equal(r.v.rights, null, 'a page with no GifOS.rights() reports null');
+  const held = { signed: true, meetings: 3, label: 'x', agentHost: 0 };
+  fr.doc.querySelectorAll()[0].contentWindow.GifOS.rights = async () => held;
+  r = await run(fr, 'guard.state', { want: '' });
+  assert.deepEqual(r.v.rights, held);
+});
