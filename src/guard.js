@@ -313,7 +313,10 @@ export class RoomGuard {
   async greet(text) {
     await this.sendChat(text);
     if (!this.policy.voice) return;
-    try { await this.ctx.bot.interject(this.live().session_id, text.replace(/https?:\/\/\S+/g, '').slice(0, 400), { voice: this.policy.voice }); }
+    try {
+      const said = await this.ctx.bot.interject(this.live().session_id, text.replace(/https?:\/\/\S+/g, '').slice(0, 400), { voice: this.policy.voice });
+      if (!said || said.applied === false) throw new Error((said && said.gap) || 'Meeting Bot cannot speak yet');
+    }
     catch (e) { this.note('guard.voice_failed', { text: String((e && e.message) || e).slice(0, 160) }); }
   }
   async sendChat(text) {
