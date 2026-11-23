@@ -148,7 +148,7 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
   if (cfg.guardConfig) {
     try {
       const { startGuardsFromConfig } = await import('./guard.js');
-      const list = await startGuardsFromConfig(ctx, cfg.guardConfig, { log });
+      const list = await startGuardsFromConfig(ctx, cfg.guardConfig, { log, cfg });
       ctx.guards = ctx.guards || new Map();
       for (const g of list) ctx.guards.set(g.policy.link, g);
       log('guarding ' + list.length + ' room(s) from ' + cfg.guardConfig);

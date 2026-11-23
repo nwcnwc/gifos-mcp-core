@@ -26,6 +26,10 @@
 //               A pass whose ticket moved to another meeting comes back only with a fresh join of this one (the page
 //               never takes a moved pass back by itself; reloading the file does not either): the guard leaves and
 //               joins the room again (guard.rejoin), whatever its rank, so every sibling holds the ticket again.
+//   voice       a Kokoro voice id (e.g. "af_heart", "bm_george"): the greeting is spoken aloud in that voice as well as
+//               sent to chat. Unset: chat only. The voice runs in this bot's process (GIFOS_TTS_ENGINE=none turns it off).
+//   picture     path of the bot's profile picture (GIF, PNG, JPEG, WebP, up to 256 KB), shown to the room like anyone's.
+//               One picture per bot process; GIFOS_BOT_PICTURE wins when set. Rooms without a password blur it.
 //   handler     path of a module exporting onMessage(message, room): called on the lead for every chat or spoken
 //               line from a person; room.sendChat(text) and room.say(text) answer. See examples/.
 //
@@ -73,6 +77,8 @@ export function normalizePolicy(p, base) {
     greet: p.greet === false ? false : (typeof p.greet === 'string' && p.greet.includes('{names}') ? p.greet : defaultGreeting(p.blur_all !== false)),
     rank: Math.max(0, Math.trunc(Number(p.rank) || 0)),
     handler: rel(p.handler),
+    voice: typeof p.voice === 'string' && /^[a-z]{2}_[a-z0-9]+$/i.test(p.voice.trim()) ? p.voice.trim() : '',
+    picture: rel(p.picture),
   };
   if (mode === 'open' && !out.credentials) throw new Error('A public open-floor meeting (mode open) is held by capture: set credentials to a subscription file on a $5+ plan.');
   if (mode === 'admin' && !out.host_password) throw new Error('A private meeting (mode admin) needs host_password.');
@@ -290,7 +296,7 @@ export class RoomGuard {
         try { const v = await this.ctx.bot.room(m.session_id, a.op, args); this.note('guard.action', { op: a.op, why: a.why, ok: true, v: a.op === 'guard.credentials' ? { loaded: !!(v && v.loaded) } : v }); }
         catch (e) { this.note('guard.action', { op: a.op, why: a.why, ok: false, error: String((e && e.message) || e).slice(0, 200) }); }
       }
-      if (p.greet && p.greet.length) await this.sendChat(greetingText(this.policy.greet, p.greet)).then(() => this.note('guard.greeted', { n: p.greet.length }), (e) => { this.mem.queue.unshift(...p.greet.map((name) => ({ id: '', name, at: 0 }))); this.note('guard.greet_failed', { text: String(e.message || e).slice(0, 120) }); });
+      if (p.greet && p.greet.length) await this.greet(greetingText(this.policy.greet, p.greet)).then(() => this.note('guard.greeted', { n: p.greet.length, spoken: !!this.policy.voice }), (e) => { this.mem.queue.unshift(...p.greet.map((name) => ({ id: '', name, at: 0 }))); this.note('guard.greet_failed', { text: String(e.message || e).slice(0, 120) }); });
     } finally { this.busy = false; }
   }
   // Leave the room and join it again at the next tick: a page start, the one way a GifOS page takes back a pass that
@@ -301,6 +307,14 @@ export class RoomGuard {
     this.note('guard.action', { op: 'guard.rejoin', why, ok: true });
     this.meetingId = null; this.nextJoin = 0;
     this.mem.role = 'waiting';
+  }
+  // Chat first (the line people can read), then the same words aloud when the policy has a voice. A voice that
+  // fails (no Kokoro on this box) is noted and never fails the greeting: the chat line already went.
+  async greet(text) {
+    await this.sendChat(text);
+    if (!this.policy.voice) return;
+    try { await this.ctx.bot.interject(this.live().session_id, text.replace(/https?:\/\/\S+/g, '').slice(0, 400), { voice: this.policy.voice }); }
+    catch (e) { this.note('guard.voice_failed', { text: String((e && e.message) || e).slice(0, 160) }); }
   }
   async sendChat(text) {
     const m = this.live(); if (!m) throw new Error('The bot is not in the room.');
@@ -333,6 +347,11 @@ export async function startGuardsFromConfig(ctx, file, opts = {}) {
   const conf = JSON.parse(fs.readFileSync(file, 'utf8'));
   const list = Array.isArray(conf.guards) ? conf.guards : [conf];
   const out = [];
-  for (const p of list) out.push(await new RoomGuard(ctx, normalizePolicy(p, path.dirname(path.resolve(file))), opts).start());
+  for (const p of list) {
+    const pol = normalizePolicy(p, path.dirname(path.resolve(file)));
+    // The bot's picture is read when its browser starts, which is after this: the first guard with one sets it.
+    if (pol.picture && opts.cfg && !opts.cfg.botPicture) opts.cfg.botPicture = pol.picture;
+    out.push(await new RoomGuard(ctx, pol, opts).start());
+  }
   return out;
 }
