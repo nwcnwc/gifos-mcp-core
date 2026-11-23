@@ -55,6 +55,16 @@ export function withDeadline(p, ms, what) {
 }
 const READS = new Set(['people', 'status', 'meetingState', 'snapshot']);
 
+// The bot's browser can lose Meeting Bot in several ways: the browser or its profile closes (a crash, a kill, out of
+// memory), the run.html tab closes or crashes, or the tab moves to a new document. A site deploy moves every open page
+// to the new version (js/gifos-update.js go(), run.html askLive), which replaces Meeting Bot's frame and every meeting
+// frame in it. After that, a Frame handle from before answers "Target page, context or browser has been closed" for
+// good, while the page itself still looks open. Seen live 2026-11-21: both welcome bots stayed out of their room for
+// 45 h, failing every join with it. So the driver treats any of these as a lost browser: it tells onLost listeners
+// which meetings went with it, and the next call starts a fresh browser.
+export const DEAD_PAGE_RE = /Target page, context or browser has been closed|Target closed|Target crashed|Frame was detached|Execution context was destroyed|Browser has been closed|browser has disconnected/i;
+export function isDeadPage(e) { return DEAD_PAGE_RE.test(String((e && e.message) || e || '')); }
+
 export async function storeAppListing(gifosUrl, slug, { fetchFn = fetch, sleepFn = sleep, tries = 4 } = {}) {
   const base = String(gifosUrl || '').replace(/\/$/, '');
   const listing = base + '/apps/' + encodeURIComponent(slug) + '/app.json';
@@ -169,23 +179,66 @@ export class MeetingBotDriver {
       this.kokoroPromise.then((v) => { this.kokoro = v || null; this.kokoroSettled = true; }, () => { this.kokoro = null; this.kokoroSettled = true; });
     }
     this.queue = (hooks && hooks.queue) || new SpeechQueue(hooks || {});
+    this.listing = (hooks && hooks.storeAppListing) || storeAppListing;   // tests hand in a stand-in
     this.state = 'stopped';
     this.error = '';
     this.starting = null;
     this.bot = null;      // { ctx, desk, app, frame, fileId }
     this.sttFileId = '';
+    this.sessions = new Set();   // meeting session ids joined in this browser, for onLost
+    this.lostHooks = [];
+    this.lostWhy = '';
+    this.gen = 0;                // which browser start the page listeners belong to
+  }
+
+  // fn(sessionIds, why): the browser lost these meetings (see DEAD_PAGE_RE). Same shape as WorkerPool.onLost.
+  onLost(fn) {
+    this.lostHooks.push(fn);
+    return () => { this.lostHooks = this.lostHooks.filter((f) => f !== fn); };
+  }
+
+  // A ready bot whose run.html tab and Meeting Bot frame are both still there.
+  alive() {
+    const b = this.bot;
+    return this.state === 'ready' && !!b && !!b.app && !b.app.isClosed() && !!b.frame && !b.frame.isDetached();
+  }
+
+  // Only a ready bot is lost: a start that fails is ensureStarted's to handle.
+  lose(why) {
+    if (this.state !== 'ready') return;
+    this.state = 'lost';
+    this.lostWhy = why;
+    const ids = [...this.sessions];
+    this.sessions.clear();
+    log('bot browser lost: ' + why + (ids.length ? '; ' + ids.length + ' meeting(s) dropped' : '') + '; the next call starts a fresh browser');
+    for (const fn of this.lostHooks) {
+      try { fn(ids, why); } catch (e) { log('onLost listener failed: ' + String((e && e.message) || e)); }
+    }
+  }
+
+  // A page call that failed because the page, frame or browser is gone marks the browser lost.
+  dead(e) {
+    if (isDeadPage(e)) this.lose('a page call answered: ' + String((e && e.message) || e).split('\n')[0].slice(0, 160));
+    return e;
   }
 
   ensureStarted() {
-    if (this.state === 'ready' && this.bot && this.bot.app && !this.bot.app.isClosed()) return Promise.resolve();
+    if (this.alive()) return Promise.resolve();
+    if (this.state === 'ready') this.lose(this.bot && this.bot.app && this.bot.app.isClosed() ? 'the Meeting Bot tab is closed' : 'the Meeting Bot frame is gone');
+    // A worker process ends on a loss (worker.js) and sets relaunch false: it must not start a browser on its way out.
+    if (this.relaunch === false && this.lostWhy) return Promise.reject(new Error('The bot browser was lost (' + this.lostWhy + ').'));
     if (!this.starting) {
-      this.starting = this.start().then(() => { this.starting = null; }, async (e) => {
-        this.starting = null;
-        this.state = 'error';
+      this.starting = (async () => {
+        // A lost browser is closed first: a new one cannot open the same profile while the old one holds it.
+        if (this.bot) { log('relaunching the bot browser (' + (this.lostWhy || this.state) + ')'); await this.close(); }
+        await this.start();
+      })().then(() => { this.starting = null; this.lostWhy = ''; }, async (e) => {
         this.error = String((e && e.message) || e);
         log('start failed: ' + this.error);
+        // Callers meanwhile wait on this same start, so nobody starts another browser before this one is closed.
         await this.close().catch(() => {});
         this.state = 'error';
+        this.starting = null;
         throw e;
       });
     }
@@ -452,7 +505,7 @@ export class MeetingBotDriver {
     this.error = '';
     // Meeting Bot's listing first. A later provider (Offline Captions) can be
     // listed and still hang its store page; that must not hide a missing bot.
-    await storeAppListing(this.cfg.gifosUrl, 'meeting-bot');
+    await this.listing(this.cfg.gifosUrl, 'meeting-bot');
     fs.mkdirSync(this.cfg.home, { recursive: true, mode: 0o700 });
     // Speech weights load in the background (createRuntime). Starting the
     // browser does not wait on them; say() fails clearly if they never arrive.
@@ -466,12 +519,21 @@ export class MeetingBotDriver {
     log('starting the bot browser for ' + this.cfg.gifosUrl);
     const ctx = await this.launch(this.cfg.profile || 'profile-bot', audio);
     this.bot = { ctx };
+    // Listeners of an older browser start (closed by close(), which moves gen on) say nothing.
+    const gen = ++this.gen;
+    const lost = (why) => { if (gen === this.gen) this.lose(why); };
+    ctx.on('close', () => lost('the bot browser closed'));
     const desk = await this.desktop(ctx);
     this.bot.desk = desk;
     await this.applyProviders(desk);
     this.bot.fileId = await this.installFromStore(desk, 'meeting-bot');
     await this.shot(desk, 'bot-desktop.png');
     Object.assign(this.bot, await this.openApp(ctx, this.bot.fileId));
+    const { app, frame } = this.bot;
+    app.on('close', () => lost('the Meeting Bot tab closed'));
+    app.on('crash', () => lost('the Meeting Bot tab crashed'));
+    // The tab moved to a new document (a site update, a reload): Meeting Bot's frame goes with the old one.
+    app.on('framedetached', (f) => { if (f === frame) lost('the Meeting Bot frame is gone (its tab moved: a site update or a reload)'); });
     await this.startRun();
     await this.shot(this.bot.app, 'bot-running.png');
     this.state = 'ready';
@@ -505,13 +567,14 @@ export class MeetingBotDriver {
     await this.ensureStarted();
     const r = await withDeadline(this.bot.frame.evaluate(({ method, args }) => window.MeetingBot[method](...args)
       .then((v) => ({ ok: true, v }), (e) => ({ ok: false, error: String((e && e.message) || e) })), { method, args }),
-    READS.has(method) ? this.readMs() : this.callMs(), method);
+    READS.has(method) ? this.readMs() : this.callMs(), method).catch((e) => { throw this.dead(e); });
     if (!r.ok) throw new Error('Meeting Bot: ' + r.error);
     return r.v;
   }
 
   async join(link, password) {
     const r = await this.call('join', link, password || '');
+    if (r && r.id != null) this.sessions.add(String(r.id));
     await this.shot(this.bot.app, 'bot-joined.png');
     return r.id;
   }
@@ -528,6 +591,7 @@ export class MeetingBotDriver {
 
   async leave(sessionId) {
     await this.call('end', sessionId);
+    this.sessions.delete(String(sessionId));
     await this.forgetHostKeys();
   }
 
@@ -549,9 +613,10 @@ export class MeetingBotDriver {
   async room(sessionId, op, args) {
     if (!ROOM_OPS.includes(op) && !TURNS_OPS.includes(op)) throw new Error('Unknown room op.');
     await this.ensureStarted();
-    const r = TURNS_OPS.includes(op)
-      ? await this.turnsOp(sessionId, op, args || {})
-      : await withDeadline(this.bot.app.evaluate(roomPageOp, { id: String(sessionId), op, args: args || {}, oldSite: OLD_SITE, waitMs: 15000 }), this.callMs(), op);
+    const r = await (TURNS_OPS.includes(op)
+      ? this.turnsOp(sessionId, op, args || {})
+      : withDeadline(this.bot.app.evaluate(roomPageOp, { id: String(sessionId), op, args: args || {}, oldSite: OLD_SITE, waitMs: 15000 }), this.callMs(), op))
+      .catch((e) => { throw this.dead(e); });
     if (!r || !r.ok) throw new Error((r && r.error) || 'The meeting page did not answer.');
     return r.v;
   }
@@ -617,9 +682,9 @@ export class MeetingBotDriver {
 
   async whenMethod(check, gap, invoke, ms) {
     await this.ensureStarted();
-    const has = await withDeadline(this.bot.frame.evaluate(check), this.readMs(), 'a method check');
+    const has = await withDeadline(this.bot.frame.evaluate(check), this.readMs(), 'a method check').catch((e) => { throw this.dead(e); });
     if (!has) return { applied: false, gap };
-    const result = await withDeadline(invoke(), ms || this.callMs(), 'a page call');
+    const result = await withDeadline(invoke(), ms || this.callMs(), 'a page call').catch((e) => { throw this.dead(e); });
     return { applied: true, result: result == null ? null : result };
   }
 
@@ -813,8 +878,12 @@ export class MeetingBotDriver {
   }
 
   async close() {
-    if (this.bot && this.bot.ctx) await this.bot.ctx.close().catch(() => {});
+    this.gen++;   // this browser's own close is not a loss
+    this.sessions.clear();
+    // Let go of this browser before waiting on it, so a start that begins meanwhile is not undone afterwards.
+    const bot = this.bot;
     this.bot = null;
     this.state = 'stopped';
+    if (bot && bot.ctx) await bot.ctx.close().catch(() => {});
   }
 }

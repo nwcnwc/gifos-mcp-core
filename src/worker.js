@@ -35,6 +35,7 @@ export function serveWorker(channel, makeDriver, extra = [], closeMs = 10000) {
   const driver = makeDriver(queue);
   const allowed = new Set(WORKER_METHODS.concat(extra));
   let closing = null;
+  let lost = false;   // the browser is gone: this worker is ending and starts no new one
   const shut = () => {
     if (!closing) closing = Promise.resolve().then(() => (typeof driver.close === 'function' ? driver.close() : null)).catch(() => { /* exiting anyway */ });
     return closing;
@@ -47,6 +48,18 @@ export function serveWorker(channel, makeDriver, extra = [], closeMs = 10000) {
     t.unref();
     shut().then(() => { dropOwnTmp(); process.exit(0); });
   });
+  // A worker whose browser is lost (driver.js onLost) ends: the supervisor's lost() then drops its meetings and
+  // starts a fresh worker, so the supervisor never routes to sessions that no longer exist.
+  if (typeof driver.onLost === 'function') {
+    driver.onLost(() => {
+      if (closing) return;
+      lost = true;
+      driver.relaunch = false;
+      const t = setTimeout(() => { dropOwnTmp(); process.exit(1); }, closeMs);
+      t.unref();
+      shut().then(() => { dropOwnTmp(); process.exit(1); });
+    });
+  }
   channel.on('message', async (msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'close') {
@@ -57,6 +70,7 @@ export function serveWorker(channel, makeDriver, extra = [], closeMs = 10000) {
     if (msg.type === 'ping') { channel.send({ event: 'pong' }); return; }
     if (msg.type !== 'call') return;
     const { id, method, args } = msg;
+    if (lost) { channel.send({ id, ok: false, error: 'The worker lost its browser and is restarting.' }); return; }
     if (method === 'leave' && args && args[0] != null) queue.leave(args[0]);
     if (!allowed.has(method) || typeof driver[method] !== 'function') {
       channel.send({ id, ok: false, error: 'The worker has no method ' + JSON.stringify(method) + '.' });

@@ -70,7 +70,8 @@ export async function createRuntime(env = process.env) {
   const live = new LiveTranscript(cfg.home);
   const hide = (text) => scrub(text, [creds.password]);
   const captions = watchCaptions({ meetings, bot, live, intervalMs: cfg.voice.pollMs, botName: () => (typeof bot.botNames === 'function' ? bot.botNames() : creds.name), scrubText: hide });
-  if (bot instanceof WorkerPool) bot.onLost(dropLostMeetings({ meetings, events, captions }));
+  // A lost worker, or (one worker) a lost bot browser, drops its meetings back to scheduled; the clock reseats them.
+  if (typeof bot.onLost === 'function') bot.onLost(dropLostMeetings({ meetings, events, captions }));
   const ctx = createContext({ cfg, meetings, bot, live, captions, botName: creds.name, botPassword: creds.password, schedule, events });
   return { cfg, creds, ctx, bot, captions, hide };
 }
