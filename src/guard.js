@@ -23,6 +23,9 @@
 //               the lead's seat is gone the next sibling takes the ticket back, rank 0 first.
 //               A PASS (the staff pass) keeps a ticket in every session of one room (the pay Worker's sameMeeting),
 //               so all siblings hold one: the lowest rank present leads, the others are co-admins until its seat goes.
+//               A pass whose ticket moved to another meeting comes back only with a fresh join of this one (the page
+//               never takes a moved pass back by itself; reloading the file does not either): the guard leaves and
+//               joins the room again (guard.rejoin), whatever its rank, so every sibling holds the ticket again.
 //   handler     path of a module exporting onMessage(message, room): called on the lead for every chat or spoken
 //               line from a person; room.sendChat(text) and room.say(text) answer. See examples/.
 //
@@ -48,6 +51,7 @@ const GREET_EVERY_MS = 12000;   // an open room's chat is in slow mode: one line
 const GREET_SETTLE_MS = 10000;
 const RANK_DELAY_MS = 60000;    // with nobody holding the room, rank N waits N x this before taking it
 const SIBLING_GONE_MS = 45000;  // the lead's seat gone this long (+20 s per rank): take the ticket back
+const RETAKE_EVERY_MS = 60000;  // a pass's moved ticket: one fresh join of the room per this long (a join takes ~15 s)
 const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
 
 // The default welcome: neutral; it adds the clear-video note only when the guard blurs everyone.
@@ -77,7 +81,7 @@ export function normalizePolicy(p, base) {
 
 export function newMemory() {
   const never = -Infinity;   // no throttle has run yet, whatever the clock reads
-  return { credLoaded: false, capOffSince: 0, lastCapture: never, lastReload: never, siblingSeenAt: 0, pwWrongSince: 0, lastPwFix: never,
+  return { credLoaded: false, capOffSince: 0, lastCapture: never, lastReload: never, lastRetake: never, siblingSeenAt: 0, pwWrongSince: 0, lastPwFix: never,
     role: 'starting', seen: null, queue: [], lastGreet: never, blurGap: false, signinAt: never };
 }
 
@@ -95,6 +99,15 @@ export function plan(state, policy, mem, now) {
   const sibling = amAdmin && (state.people || []).some((p) => p.id !== state.me && p.admin === true);
   if (sibling) mem.siblingSeenAt = now;
   const sub = state.subscription || {};
+  // A pass rides in this meeting (held, or lost to another meeting): its ticket is retaken by a fresh join, not a reload.
+  const viaPass = sub.via === 'pass' || (!sub.held && !!sub.pass);
+  const retake = (why) => {
+    if (now - mem.lastRetake < RETAKE_EVERY_MS) return;
+    mem.lastRetake = now;
+    out.events.push({ type: 'guard.retake', data: { why } });
+    act('guard.rejoin', {}, why);
+  };
+  const PASS_MOVED = 'the pass\'s ticket moved to another meeting; a pass comes back only with a fresh join: join the room again';
   const wantPw = policy.password || '';
   // The password: wrong means set when it should be none, or (state.password_ok false) not the value it should be.
   const pwWrong = wantPw ? state.password_ok === false : !!state.password_set;
@@ -128,7 +141,8 @@ export function plan(state, policy, mem, now) {
     if (!mem.credLoaded) {
       if (now - mem.capOffSince >= policy.rank * RANK_DELAY_MS) { mem.credLoaded = true; act('guard.credentials', {}, 'load the subscription to take the room'); }
     } else if (cap.can_take && now - mem.lastCapture > CAPTURE_EVERY_MS) { mem.lastCapture = now; act('guard.capture', {}, 'take charge of the meeting ("Make me host")'); }
-    else if (!sub.held && sub.moved && now - mem.lastReload > RELOAD_EVERY_MS) { mem.lastReload = now; act('guard.credentials', {}, 'the subscription\'s ticket is ' + sub.moved + ': join this meeting with it again'); }
+    else if (!sub.held && sub.moved === 'moved' && viaPass) retake(PASS_MOVED);
+    else if (!sub.held && sub.moved && !viaPass && now - mem.lastReload > RELOAD_EVERY_MS) { mem.lastReload = now; act('guard.credentials', {}, 'the subscription\'s ticket is ' + sub.moved + ': join this meeting with it again'); }
     fixPassword('a public open-floor meeting nobody holds had its password changed; anyone inside may set it');
     return out;
   }
@@ -150,6 +164,14 @@ export function plan(state, policy, mem, now) {
     setRole('lead', 'leads, holds the meeting ticket');
     fixPassword('the room password is not what the policy says');
     leadDuties(state, policy, mem, now, true, act, out);
+  } else if (viaPass) {
+    // Every sibling holds a pass's ticket in this room at once, so a seat without it lost it to another meeting (or is
+    // still joining): it takes it back with a fresh join while a sibling, if any, leads.
+    setRole('coadmin', 'holds the meeting by the shared pass; its ticket is ' + (sub.moved || 'not here yet'));
+    if (sub.moved === 'moved') retake(PASS_MOVED);
+    if (pwWrong && now - mem.pwWrongSince > 6000) fixPassword('the lead has not fixed the password');
+    else if (pwWrong && !mem.pwWrongSince) mem.pwWrongSince = now;
+    leadDuties(state, policy, mem, now, false, act, out);
   } else {
     setRole('coadmin', 'holds the meeting by the shared key; a sibling holds the ticket');
     if (pwWrong && now - mem.pwWrongSince > 6000) fixPassword('the lead has not fixed the password');
@@ -228,7 +250,9 @@ export class RoomGuard {
     if (Date.now() < this.nextJoin) return null;
     try {
       const { meeting } = await this.ctx.joinByLink(this.policy.link, this.policy.join_password, this.policy.topic || 'guard');
-      this.meetingId = meeting.meeting_id; this.joinFails = 0; this.mem = Object.assign(newMemory(), { role: 'waiting' });
+      this.meetingId = meeting.meeting_id; this.joinFails = 0;
+      // A new seat starts over, but keeps the clock of its last fresh join for a moved pass (one a minute, never a storm).
+      this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake });
       this.note('guard.joined', { link: this.policy.link.replace(/[?#&]pw=[^&]*/, '') });
       return this.live();
     } catch (e) {
@@ -261,12 +285,22 @@ export class RoomGuard {
         seated: !!(st && st.seated), sibling_seen_at: this.mem.siblingSeenAt ? new Date(this.mem.siblingSeenAt).toISOString() : null };
       for (const e of p.events) this.note(e.type, e.data);
       for (const a of p.actions) {
+        if (a.op === 'guard.rejoin') { await this.rejoin(m, a.why); return; }
         const args = a.op === 'guard.credentials' ? { gif_b64: this.credB64 } : a.args;
         try { const v = await this.ctx.bot.room(m.session_id, a.op, args); this.note('guard.action', { op: a.op, why: a.why, ok: true, v: a.op === 'guard.credentials' ? { loaded: !!(v && v.loaded) } : v }); }
         catch (e) { this.note('guard.action', { op: a.op, why: a.why, ok: false, error: String((e && e.message) || e).slice(0, 200) }); }
       }
       if (p.greet && p.greet.length) await this.sendChat(greetingText(this.policy.greet, p.greet)).then(() => this.note('guard.greeted', { n: p.greet.length }), (e) => { this.mem.queue.unshift(...p.greet.map((name) => ({ id: '', name, at: 0 }))); this.note('guard.greet_failed', { text: String(e.message || e).slice(0, 120) }); });
     } finally { this.busy = false; }
+  }
+  // Leave the room and join it again at the next tick: a page start, the one way a GifOS page takes back a pass that
+  // moved to another meeting. The new seat loads the credentials and proves its key again (plan() from 'waiting').
+  async rejoin(m, why) {
+    try { await this.ctx.depart(m, 'guard'); }
+    catch (e) { this.note('guard.action', { op: 'guard.rejoin', why, ok: false, error: String((e && e.message) || e).slice(0, 200) }); return; }
+    this.note('guard.action', { op: 'guard.rejoin', why, ok: true });
+    this.meetingId = null; this.nextJoin = 0;
+    this.mem.role = 'waiting';
   }
   async sendChat(text) {
     const m = this.live(); if (!m) throw new Error('The bot is not in the room.');

@@ -188,7 +188,8 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
             const pm = M && has(M.passMeeting) ? M.passMeeting() : null;
             if (!mt && !pm) return null;
             const sh = !!(mt && mt.held), ph = !!(pm && pm.held);
-            return { held: sh || ph, via: sh ? 'sub' : ph ? 'pass' : null, moved: sh || ph ? null : ((pm && pm.moved) || (mt && mt.moved) || null),
+            // pass: a pass rides in this meeting, held or lost (src/guard.js retakes a moved pass with a fresh join).
+            return { held: sh || ph, via: sh ? 'sub' : ph ? 'pass' : null, pass: !!pm, moved: sh || ph ? null : ((pm && pm.moved) || (mt && mt.moved) || null),
               tier: (mt && mt.tier) || (ph ? 'pass' : null), paid: !!(mt && mt.paid) || ph };
           })(),
           subs_on: !!(M && has(M.enabled) && M.enabled()),
@@ -200,7 +201,6 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
       case 'guard.credentials': {
         const M = w.GifOS && w.GifOS.meetSubs;
         if (!M || !has(M.useFile)) return { ok: false, error: oldSite };
-        try { w.localStorage.setItem('gifos-mcp-plan', '1'); } catch (e) {}   // the bot holds a plan: its meetings' frames switch subscriptions on (driver.js SUBS_SWITCH)
         const bytes = Uint8Array.from(w.atob(String(a.gif_b64 || '')), (c) => c.charCodeAt(0));
         const st = await M.useFile(bytes);
         return { ok: true, v: { loaded: true, status: st && st.status ? st.status : null } };
