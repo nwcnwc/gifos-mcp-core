@@ -33,7 +33,7 @@ pinned to an exact commit. Everything runs on your own computer; there is no hos
 - **Speech to text: GifOS Whisper** (the Offline Captions app from the GifOS store), in the headless browser.
 - **Links** (`src/links.js`). Room links are minted here. A host's room carries only the verifier of the host
   key, derived as GifOS does (PBKDF2-SHA256 310000 rounds → Ed25519 → SHA-256); the password never leaves
-  the process. The room name rides in the part after #, which browsers never send to a server, so it never reaches GifOS's servers or logs. The simple public forms, gifos.app/meet/<room> and gifos.app/meet/<room>/<verifier> (hosted), work forever and are fine for links you write by hand, like gifos.app/meet/welcome; they put the room name in the address a server sees.
+  the process. The room name rides in the part after #, which browsers never send to a server, so it never reaches GifOS's servers or logs. Older /meet/<room> links still work.
 - **Invite details** (`src/invite.js`, [docs/INVITE.md](docs/INVITE.md)): title, start and end with time zone,
   link, description, how people get in, who does what, and ready-to-send text. Nothing is sent and no
   calendar file is written.
