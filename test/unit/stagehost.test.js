@@ -22,6 +22,8 @@ test('policy: stage defaults, and stage off keeps the old greeting', () => {
   assert.equal(off.stage, false);
   assert.equal(off.greet, defaultGreeting(false));
   assert.equal(off.stage_idle_s, 45);
+  assert.equal(off.stage_first_s, 120);
+  assert.equal(pol({ stage_first_s: 30 }).stage_first_s, 30);
   assert.equal(off.stage_max_s, 240);
   assert.equal(off.stage_takeover_s, 6);
   assert.equal(pol({ rank: 1 }).stage_takeover_s, 12);
@@ -412,4 +414,32 @@ test('a line with no id is matched by name only while the name is unique', () =>
   m.names = ['Ana', 'Ana', 'Sam'];
   assert.equal(shouldAnswer(m, { from: 'Ana', text: 'hi' }), false);
   assert.equal(shouldAnswer(m, { from: 'Ana', fromId: '', text: 'hi' }), false);
+});
+
+test('first-line grace: a promoted person gets stage_first_s from the step-up to say something, then stage_idle_s between lines', () => {
+  const p = pol({ stage: true });
+  const m = newMemory();
+  m.onStage = true;
+  const walking = view({ me_on: true, on_stage: [bot('me', 'Mia')], people: [person('a', 'Ana', 3)] });
+  const up = view({ me_on: true, on_stage: [bot('me', 'Mia'), human('a', 'Ana')], people: [person('a', 'Ana', null)] });
+  let d = planStage(walking, m, 0, p);
+  assert.deepEqual(d.actions, [{ op: 'stage.grant', person_id: 'a', on: true }]);
+  assert.equal(m.promoted.spoke, false);
+  planStage(up, m, 10000, p);
+  assert.equal(m.promoted.arrivedAt, 10000, 'the grace starts at the step-up');
+  d = planStage(up, m, 10000 + 119999, p);
+  assert.equal(d.thanks, null, 'no idle before the first line inside the grace (old rule ended it at 45 s)');
+  assert.equal(m.promoted.id, 'a');
+  assert.equal(noteLine(m, { from: 'Ana', fromId: 'a', text: 'What is GifOS?', at: 125000 }, p).answer, true);
+  assert.equal(m.promoted.spoke, true);
+  d = planStage(up, m, 125000 + 44999, p);
+  assert.equal(d.thanks, null);
+  d = planStage(up, m, 125000 + 45000, p);
+  assert.equal(d.note, 'idle', 'after the first line the usual idle clock runs');
+  const q = newMemory();
+  q.onStage = true;
+  planStage(walking, q, 0, p);
+  planStage(up, q, 5000, p);
+  d = planStage(up, q, 5000 + 120000, p);
+  assert.equal(d.note, 'idle', 'silent for the whole grace: back to the row');
 });

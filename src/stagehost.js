@@ -25,6 +25,8 @@ export function stageTiming(p, rank) {
   return {
     stage: !!(p && p.stage === true),
     stage_idle_s: n(p && p.stage_idle_s, 45),
+    // A promoted person's first line takes longer than the next ones (walking up, typing a question).
+    stage_first_s: n(p && p.stage_first_s, 120),
     stage_max_s: n(p && p.stage_max_s, 240),
     stage_takeover_s: n(p && p.stage_takeover_s, defaultTakeoverS(rank)),
     stage_done_words: src.length ? src : STAGE_DONE_WORDS.slice(),
@@ -137,6 +139,7 @@ export function noteLine(mem, message, policy) {
   if (!shouldAnswer(mem, message)) return out;
   const at = message && Number.isFinite(message.at) ? message.at : Date.now();
   mem.promoted.lastSpoke = at;
+  mem.promoted.spoke = true;
   const words = policy && policy.stage_done_words && policy.stage_done_words.length ? policy.stage_done_words : STAGE_DONE_WORDS;
   if (saysDone(message && message.text, words)) { mem.promoted.saidDone = true; return out; }
   out.answer = true;
@@ -148,9 +151,10 @@ function doneWhy(promoted, view, now, policy) {
   const here = on.some((s) => idsMatch(s.id, promoted.id));
   // Stepping up lowers the hand (the page does that itself). A hand that is down
   // counts as "done" only before they arrive; after that it is the step-up, not a goodbye.
-  if (here) promoted.arrived = true;
+  if (here && !promoted.arrived) { promoted.arrived = true; promoted.arrivedAt = now; }
   const person = findPerson(view.people, promoted.id);
   const idle = (Number.isFinite(policy.stage_idle_s) ? policy.stage_idle_s : 45) * 1000;
+  const first = (Number.isFinite(policy.stage_first_s) ? policy.stage_first_s : 120) * 1000;
   const max = (Number.isFinite(policy.stage_max_s) ? policy.stage_max_s : 240) * 1000;
   if (promoted.saidDone) return 'thanks';
   if (!person) return 'left';
@@ -158,7 +162,9 @@ function doneWhy(promoted, view, now, policy) {
   if (!promoted.arrived && person.hand === null) return 'hand';
   if (!promoted.arrived && now - promoted.since >= PROMOTE_ARRIVE_MS) return 'absent';
   if (promoted.arrived && !here) return 'down';
-  if (promoted.arrived && now - (promoted.lastSpoke || promoted.since) >= idle) return 'idle';
+  // Before their first line the clock is stage_first_s from the step-up; after it, stage_idle_s from the last line.
+  if (promoted.arrived && promoted.spoke === false && now - (promoted.arrivedAt != null ? promoted.arrivedAt : promoted.since) >= first) return 'idle';
+  if (promoted.arrived && promoted.spoke !== false && now - (promoted.lastSpoke || promoted.since) >= idle) return 'idle';
   return '';
 }
 
@@ -217,7 +223,7 @@ export function planStage(view, mem, now, policy) {
   const next = queueHands(people, { me: view.me, on, served: mem.served })[0];
   if (!next) return out;
   out.actions.push({ op: 'stage.grant', person_id: next.id, on: true });
-  mem.promoted = { id: next.id, name: next.name, since: now, lastSpoke: now, arrived: false, saidDone: false };
+  mem.promoted = { id: next.id, name: next.name, since: now, lastSpoke: now, spoke: false, arrived: false, saidDone: false };
   if (!out.note) out.note = 'promoting';
   return out;
 }
