@@ -277,6 +277,12 @@ export class RoomGuard {
       // A new seat starts over, but keeps the clock of its last fresh join for a moved pass (one a minute, never a storm).
       this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake });
       this.note('guard.joined', { link: this.policy.link.replace(/[?#&]pw=[^&]*/, '') });
+      // A handler needs the room's lines. With GIFOS_ALWAYS_TRANSCRIBE=0 the join starts no poll, so the handler and
+      // the Stage's "thanks" never heard anyone (seen live 2026-11-24). Poll the lines the page already keeps (chat and
+      // others' shared captions); this does not turn on the bot's own Whisper.
+      if (this.handler && this.ctx.captions && !meeting.transcribing && typeof this.ctx.captions.start === 'function') {
+        await Promise.resolve(this.ctx.captions.start(this.live() || meeting)).catch(() => {});
+      }
       return this.live();
     } catch (e) {
       this.joinFails++; this.nextJoin = Date.now() + Math.min(120000, 5000 * 2 ** this.joinFails);
