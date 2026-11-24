@@ -387,3 +387,29 @@ async function run(fr, op, args) {
   try { return await roomPageOp({ id: 's1', op, args, oldSite: 'old', waitMs: 50 }); }
   finally { globalThis.document = saved; }
 }
+
+test('promoted is matched by seat id: a second person with the same name is not answered', () => {
+  const p = pol({ stage: true });
+  const m = newMemory();
+  m.onStage = true;
+  m.names = ['Ana', 'Ana', 'Sam'];
+  m.promoted = { id: 'aaaaaaaaaaaa1', name: 'Ana', since: 0, lastSpoke: 0, arrived: true, saidDone: false };
+  assert.equal(shouldAnswer(m, { from: 'Ana', fromId: 'bbbbbbbbbbbb2', text: 'What is GifOS?' }), false);
+  assert.equal(noteLine(m, { from: 'Ana', fromId: 'bbbbbbbbbbbb2', text: 'What is GifOS?', at: 7 }, p).answer, false);
+  assert.equal(m.promoted.lastSpoke, 0, 'the other Ana does not refresh the idle clock');
+  assert.equal(shouldAnswer(m, { from: 'Ana', fromId: 'aaaaaaaaaaaa1', text: 'What is GifOS?' }), true);
+  assert.equal(shouldAnswer(m, { from: 'Ana', fromId: 'aaaaaaaaaaaa', text: 'hi' }), true, 'a 12-char id prefix matches');
+  assert.equal(noteLine(m, { from: 'Ana', fromId: 'bbbbbbbbbbbb2', text: 'thanks', at: 8 }, p).answer, false);
+  assert.equal(m.promoted.saidDone, false, 'the other Ana saying thanks does not end the session');
+});
+
+test('a line with no id is matched by name only while the name is unique', () => {
+  const m = newMemory();
+  m.onStage = true;
+  m.promoted = { id: 'a1', name: 'Ana', since: 0, lastSpoke: 0, arrived: true, saidDone: false };
+  m.names = ['Ana', 'Sam'];
+  assert.equal(shouldAnswer(m, { from: 'Ana', text: 'hi' }), true);
+  m.names = ['Ana', 'Ana', 'Sam'];
+  assert.equal(shouldAnswer(m, { from: 'Ana', text: 'hi' }), false);
+  assert.equal(shouldAnswer(m, { from: 'Ana', fromId: '', text: 'hi' }), false);
+});

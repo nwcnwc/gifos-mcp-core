@@ -118,11 +118,17 @@ function findPerson(people, id) {
   return (people || []).find((p) => idsMatch(p.id, id)) || null;
 }
 
-// message.from is a display NAME, not an id. Two people who share that name cannot be told apart:
-// a second person with the promoted name is answered too.
+// A line is matched to the promoted person by SEAT ID (message.fromId) whenever the line carries one.
+// A line with no id (a caption line is only "Name: words") is matched by name, and only while that name is
+// unique among the people in the room (mem.names, read each tick): two people may share a name, and a
+// second "Ana" must never be answered as the promoted Ana.
 export function shouldAnswer(mem, message) {
   if (!mem || !mem.onStage || !mem.promoted) return false;
-  return String((message && message.from) || '') === String(mem.promoted.name || '');
+  if (message && message.fromId != null && message.fromId !== '') return idsMatch(message.fromId, mem.promoted.id);
+  const name = String((message && message.from) || '');
+  if (!name || name !== String(mem.promoted.name || '')) return false;
+  const same = (mem.names || []).filter((n) => String(n) === name).length;
+  return same <= 1;
 }
 
 // Records speech from the promoted person. A done-phrase is not an answer: the guard thanks them itself.

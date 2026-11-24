@@ -307,7 +307,7 @@ export class RoomGuard {
         let snap = null;
         try { snap = await this.ctx.bot.room(m.session_id, 'stage.get', {}); }
         catch (e) { this.note('guard.stage_failed', { text: String((e && e.message) || e).slice(0, 200) }); }
-        if (snap) { stageNow = stageView(st, snap, this.botName()); st.stage = { me_on: stageNow.me_on }; }
+        if (snap) { stageNow = stageView(st, snap, this.botName()); this.mem.names = stageNow.people.map((q) => q.name); st.stage = { me_on: stageNow.me_on }; }
         else st.stage = { me_on: false };
       }
       const p = plan(st, this.policy, this.mem, Date.now());
@@ -374,14 +374,14 @@ export class RoomGuard {
   }
   // Every chat or spoken line from a person in this room reaches the handler, on the lead only (one answer per line).
   // Stage on: only the bot that is on the Stage, and only the person it promoted. The join greeting is the other
-  // thing this bot says. message.from is a display name (shouldAnswer): two people with that same name cannot be
-  // told apart, so both would be answered.
+  // thing this bot says. a line with a seat id is matched by id; one without is matched by name only
+  // while the name is unique in the room (shouldAnswer).
   hookLines() {
     if (!this.handler || !this.ctx.transcript || typeof this.ctx.transcript.onLine !== 'function') return;
     const ours = () => new Set(typeof this.ctx.ourNames === 'function' ? this.ctx.ourNames() : [this.botName()]);
     const fn = (row) => {
       if (!row || row.meeting_id !== this.meetingId || ours().has(row.speaker) || (row.kind !== 'chat' && row.kind !== 'speech')) return;
-      const msg = { text: row.text, from: row.speaker, kind: row.kind, at: row.ts };
+      const msg = { text: row.text, from: row.speaker, fromId: row.speaker_id || '', kind: row.kind, at: row.ts };
       if (this.policy.stage) {
         if (!shouldAnswer(this.mem, msg)) return;
         if (!noteLine(this.mem, msg, this.policy).answer) return;

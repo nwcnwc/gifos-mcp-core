@@ -56,7 +56,7 @@ export class CoreBotDriver {
     meet.on('people', (p) => { s.people = Array.isArray(p) ? p : s.people; });
     meet.on('line', (l) => {
       if (!l || l.final === false) return;
-      if (l.kind === 'chat') s.chat.push({ by: l.name || '', at: l.ts || Date.now(), text: String(l.text || '') });
+      if (l.kind === 'chat') s.chat.push({ by: l.name || '', byId: l.id || '', at: l.ts || Date.now(), text: String(l.text || '') });
       else if (l.kind === 'speech' || l.kind === 'spoken') s.lines.push((l.name || '') + ': ' + String(l.text || ''));
     });
     meet.on('left', () => { s.gone = true; });
@@ -74,7 +74,7 @@ export class CoreBotDriver {
       // what the room already holds (lines said before the bot came are read as history the page keeps)
       const r = await meet.call('lines').catch(() => null);
       for (const l of (r && r.lines) || []) {
-        if (l.kind === 'chat') s.chat.push({ by: l.name || '', at: l.ts || 0, text: String(l.text || '') });
+        if (l.kind === 'chat') s.chat.push({ by: l.name || '', byId: l.id || '', at: l.ts || 0, text: String(l.text || '') });
         else if (l.kind === 'speech' || l.kind === 'spoken') s.lines.push((l.name || '') + ': ' + String(l.text || ''));
       }
     } catch (e) {
