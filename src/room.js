@@ -177,6 +177,15 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         // The seats this page has proven admins: their signed orders verified against the room's admin key (a captured
         // room's capture key, a host room's host key). A sibling bot is one of them; a name proves nothing (src/guard.js).
         const admins = new Set((has(g.adminsHere) ? g.adminsHere() : []).map(String));
+        // Raised hands, when this page exposes them (window.__gifosVideo.handQueue: { id, name, t }).
+        // Absent means the hand is down. A page without handQueue leaves the field off, so older reads stay the same.
+        // Per-person bot bits are not on this API (they live on the agent people list). A sibling is an admin.
+        let hands = null;
+        if (has(g.handQueue)) {
+          hands = new Map();
+          try { for (const h of g.handQueue() || []) if (h && h.id != null) hands.set(String(h.id), typeof h.t === 'number' && h.t > 0 ? h.t : null); }
+          catch (e) { hands = null; }
+        }
         return { ok: true, v: {
           supported: !!(note && cb && pwb && M && has(M.useFile)),
           seated: !!(d.me && d.me.state === 3), participants: d.participants || 0, me: d.me ? d.me.peer : null,
@@ -197,7 +206,11 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
           rights,
           subs_on: !!(M && has(M.enabled) && M.enabled()),
           blur_all: ba ? { offered: vis(ba), on: ba.classList.contains('on') } : null,
-          people: ids.map((pid) => ({ id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '', admin: admins.has(String(pid)) })),
+          people: ids.map((pid) => {
+            const row = { id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '', admin: admins.has(String(pid)) };
+            if (hands) row.hand = hands.has(String(pid)) ? hands.get(String(pid)) : null;
+            return row;
+          }),
         } };
       }
       // Load a subscription file (the GifOS credentials GIF) into the bot's browser, so its seat joins with that plan.

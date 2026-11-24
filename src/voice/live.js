@@ -87,6 +87,7 @@ export class LiveTranscript {
       kind: entry.kind,
     };
     if (entry.source) row.source = entry.source;
+    if (entry.speaker_id) row.speaker_id = String(entry.speaker_id);
     this.lines.push(row);
     this.unsaved.push(row);
     this.flush();
@@ -196,7 +197,7 @@ export class LiveTranscript {
         const dup = this.lines.some((r) => r.meeting_id === meetingId && r.kind === 'chat' && r.speaker.toLowerCase() === speaker.toLowerCase() && r.text === text);
         if (dup) continue;
       }
-      added.push(this.append({ meeting_id: meetingId, speaker, text, kind: 'chat', source: chatSource(l) }));
+      added.push(this.append({ meeting_id: meetingId, speaker, text, kind: 'chat', source: chatSource(l), speaker_id: l && l.byId }));
     }
     return added;
   }
@@ -254,7 +255,7 @@ export function watchCaptions({ meetings, bot, live, intervalMs, botName, scrubT
         const lines = await bot.chat(session);
         const then = meetings.get(id);
         if (timers.get(id) !== timer || !then || then.state !== 'live' || then.session_id !== session) return;
-        if (Array.isArray(lines)) live.ingestChat(id, lines.map((l) => ({ by: l && l.by, at: l && l.at, text: hide(String((l && l.text) || '')) })), names);
+        if (Array.isArray(lines)) live.ingestChat(id, lines.map((l) => ({ by: l && l.by, byId: l && l.byId, at: l && l.at, text: hide(String((l && l.text) || '')) })), names);
       }
     } catch (e) { /* the next poll retries */ }
   }

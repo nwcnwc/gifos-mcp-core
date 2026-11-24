@@ -313,3 +313,10 @@ test('guard.state reports rights from GifOS.rights()', async () => {
   r = await run(fr, 'guard.state', { want: '' });
   assert.deepEqual(r.v.rights, held);
 });
+
+test('policy: voice (a Kokoro id) and picture (a path) are optional and checked', () => {
+  assert.equal(pol().voice, ''); assert.equal(pol().picture, '');
+  assert.equal(pol({ voice: 'bm_george', picture: 'a.png' }).voice, 'bm_george');
+  assert.equal(pol({ picture: 'a.png' }).picture, '/a.png');
+  assert.equal(pol({ voice: 'not a voice; rm' }).voice, '', 'only a Kokoro-shaped id is kept');
+});

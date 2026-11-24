@@ -26,8 +26,17 @@
 //               A pass whose ticket moved to another meeting comes back only with a fresh join of this one (the page
 //               never takes a moved pass back by itself; reloading the file does not either): the guard leaves and
 //               joins the room again (guard.rejoin), whatever its rank, so every sibling holds the ticket again.
+//   voice       a Kokoro voice id (e.g. "af_heart", "bm_george"): the greeting is spoken aloud in that voice as well as
+//               sent to chat. Unset: chat only. The voice runs in this bot's process (GIFOS_TTS_ENGINE=none turns it off).
+//   picture     path of the bot's profile picture (GIF, PNG, JPEG, WebP, up to 256 KB), shown to the room like anyone's.
+//               One picture per bot process; GIFOS_BOT_PICTURE wins when set. Rooms without a password blur it.
 //   handler     path of a module exporting onMessage(message, room): called on the lead for every chat or spoken
 //               line from a person; room.sendChat(text) and room.say(text) answer. See examples/.
+//               With stage on, the handler is called only for the person the staged bot promoted (src/stagehost.js).
+//   stage       false (default): the guard never touches the Stage. true: a bot takes a free Stage spot whenever no
+//               bot is up there (it never moves a human), the bot on the Stage is the one that greets, and it brings
+//               up one raised hand at a time. stage_idle_s, stage_max_s, stage_takeover_s, stage_done_words: src/stagehost.js.
+//   name        optional fallback for the greeting's {bot} when the process has no bot name. GIFOS_BOT_NAME wins.
 //
 // plan() decides; it is pure (the unit tests drive it). RoomGuard runs it every few seconds against the bot's seat
 // (room.js guard.* ops) and does what it says.
@@ -37,6 +46,7 @@ import { pathToFileURL } from 'node:url';
 import { roomFromLink } from './links.js';
 import { makeLimiter, suffix } from './log-limit.js';
 import { scrub } from './voice/settings.js';
+import { STAGE_GREETING, firstName, noteLine, planStage, shouldAnswer, stageTiming, stageView } from './stagehost.js';
 
 export const GREETING = 'Welcome, {names}! This is a GifOS public room: be kind. If someone is out of line, tap Vote, then "Vote out of room" on them.';
 // Said only when the guard blurs everyone (blur_all): otherwise it is not true.
@@ -64,15 +74,22 @@ export function normalizePolicy(p, base) {
   if (!p.link || typeof p.link !== 'string') throw new Error('A guard needs the room link.');
   const mode = p.mode === 'admin' ? 'admin' : 'open';
   const rel = (f) => (f ? path.resolve(base || process.cwd(), String(f)) : '');
+  const rank = Math.max(0, Math.trunc(Number(p.rank) || 0));
+  const stage = stageTiming(p, rank);
+  const greetCustom = typeof p.greet === 'string' && p.greet.includes('{names}');
   const out = {
     link: p.link, mode, topic: String(p.topic || ''),
     credentials: rel(p.credentials), host_password: p.host_password ? String(p.host_password) : '',
     join_password: p.join_password ? String(p.join_password) : (typeof p.password === 'string' ? p.password : ''),
     password: typeof p.password === 'string' && p.password !== '' ? p.password : null,
     blur_all: p.blur_all !== false,
-    greet: p.greet === false ? false : (typeof p.greet === 'string' && p.greet.includes('{names}') ? p.greet : defaultGreeting(p.blur_all !== false)),
-    rank: Math.max(0, Math.trunc(Number(p.rank) || 0)),
+    greet: p.greet === false ? false : (greetCustom ? p.greet : (stage.stage ? STAGE_GREETING : defaultGreeting(p.blur_all !== false))),
+    rank,
     handler: rel(p.handler),
+    voice: typeof p.voice === 'string' && /^[a-z]{2}_[a-z0-9]+$/i.test(p.voice.trim()) ? p.voice.trim() : '',
+    picture: rel(p.picture),
+    name: typeof p.name === 'string' ? p.name.trim().slice(0, 40) : '',
+    ...stage,
   };
   if (mode === 'open' && !out.credentials) throw new Error('A public open-floor meeting (mode open) is held by capture: set credentials to a subscription file on a $5+ plan.');
   if (mode === 'admin' && !out.host_password) throw new Error('A private meeting (mode admin) needs host_password.');
@@ -82,7 +99,8 @@ export function normalizePolicy(p, base) {
 export function newMemory() {
   const never = -Infinity;   // no throttle has run yet, whatever the clock reads
   return { credLoaded: false, capOffSince: 0, lastCapture: never, lastReload: never, lastRetake: never, siblingSeenAt: 0, pwWrongSince: 0, lastPwFix: never,
-    role: 'starting', seen: null, queue: [], lastGreet: never, blurGap: false, signinAt: never };
+    role: 'starting', seen: null, queue: [], lastGreet: never, blurGap: false, signinAt: never,
+    stageEmptySince: null, stageFullNoted: false, promoted: null, onStage: false, served: null };
 }
 
 // state: the guard.state op's answer (people[].admin: the page verified that seat's admin key).
@@ -191,7 +209,10 @@ function leadDuties(state, policy, mem, now, lead, act, out) {
     else if (!state.blur_all.offered && !mem.blurGap) { mem.blurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'blur_all', note: 'This GifOS page offers Blur guests only to the host of a private meeting; with no password the room shows no clear video anyway.' } }); }
   }
   const people = state.people || [];
-  if (!lead) { if (mem.seen) for (const p of people) mem.seen.add(p.id); mem.queue = []; return; }   // the lead greets them; this bot does not later
+  // Stage off: the lead greets, and a co-admin does not (it does not greet them later either).
+  // Stage on: the seat that is on the Stage greets, whether or not it is the lead.
+  const mayGreet = policy.stage ? !!(state.stage && state.stage.me_on) : lead;
+  if (!mayGreet) { if (mem.seen) for (const p of people) mem.seen.add(p.id); mem.queue = []; return; }
   if (!mem.seen) { mem.seen = new Set(people.map((p) => p.id)); return; }   // who was here when this bot became the lead: not newcomers
   for (const p of people) {
     if (p.id === state.me) continue;
@@ -208,11 +229,13 @@ function leadDuties(state, policy, mem, now, lead, act, out) {
   }
 }
 
-export function greetingText(template, names) {
+export function greetingText(template, names, bot) {
   const clean = names.map((n) => String(n || '').replace(/https?:\/\/\S+/gi, '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24) || 'friend');
   const shown = clean.slice(0, 6), more = clean.length - shown.length;
   const who = shown.length === 1 ? shown[0] : shown.slice(0, -1).join(', ') + (more > 0 ? ', ' + shown[shown.length - 1] + ' and ' + more + ' more' : ' and ' + shown[shown.length - 1]);
-  return String(template || GREETING).replace('{names}', who);
+  let text = String(template || GREETING).replace('{names}', who);
+  if (bot != null && text.includes('{bot}')) text = text.replaceAll('{bot}', firstName(bot) || 'GifOS');
+  return text;
 }
 
 // ---- the loop over one room ----
@@ -226,7 +249,7 @@ export class RoomGuard {
     this.joinFails = 0; this.nextJoin = 0; this.unhook = null;
     if (ctx.credentials && typeof ctx.credentials.guardRoom === 'function') ctx.credentials.guardRoom(roomFromLink(policy.link));
   }
-  botName() { const n = typeof this.ctx.ourNames === 'function' ? this.ctx.ourNames() : [this.ctx.botName]; return String((n && n[0]) || this.ctx.botName || ''); }
+  botName() { const n = typeof this.ctx.ourNames === 'function' ? this.ctx.ourNames() : [this.ctx.botName]; return String((n && n[0]) || this.ctx.botName || this.policy.name || ''); }
   async start() {
     if (this.policy.handler) {
       const mod = await import(pathToFileURL(this.policy.handler).href);
@@ -278,6 +301,15 @@ export class RoomGuard {
         this.meetingId = null; this.mem = Object.assign(newMemory(), { role: 'waiting' });
         return;
       }
+      // Stage on: who is up, read before plan(), so the seat on the Stage is the one allowed to greet.
+      let stageNow = null;
+      if (this.policy.stage && st && st.supported && st.seated) {
+        let snap = null;
+        try { snap = await this.ctx.bot.room(m.session_id, 'stage.get', {}); }
+        catch (e) { this.note('guard.stage_failed', { text: String((e && e.message) || e).slice(0, 200) }); }
+        if (snap) { stageNow = stageView(st, snap, this.botName()); this.mem.names = stageNow.people.map((q) => q.name); st.stage = { me_on: stageNow.me_on }; }
+        else st.stage = { me_on: false };
+      }
       const p = plan(st, this.policy, this.mem, Date.now());
       this.last = { at: new Date().toISOString(), role: p.role, participants: st && st.participants, capture: st && st.capture, password_set: st && st.password_set,
         password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all,
@@ -290,8 +322,26 @@ export class RoomGuard {
         try { const v = await this.ctx.bot.room(m.session_id, a.op, args); this.note('guard.action', { op: a.op, why: a.why, ok: true, v: a.op === 'guard.credentials' ? { loaded: !!(v && v.loaded) } : v }); }
         catch (e) { this.note('guard.action', { op: a.op, why: a.why, ok: false, error: String((e && e.message) || e).slice(0, 200) }); }
       }
-      if (p.greet && p.greet.length) await this.sendChat(greetingText(this.policy.greet, p.greet)).then(() => this.note('guard.greeted', { n: p.greet.length }), (e) => { this.mem.queue.unshift(...p.greet.map((name) => ({ id: '', name, at: 0 }))); this.note('guard.greet_failed', { text: String(e.message || e).slice(0, 120) }); });
+      if (p.greet && p.greet.length) {
+        const names = this.policy.stage ? p.greet.map((n) => firstName(n)) : p.greet;
+        const text = greetingText(this.policy.greet, names, this.policy.stage ? this.botName() : undefined);
+        await this.greet(text).then(() => this.note('guard.greeted', { n: p.greet.length, spoken: !!this.policy.voice }), (e) => { this.mem.queue.unshift(...p.greet.map((name) => ({ id: '', name, at: 0 }))); this.note('guard.greet_failed', { text: String(e.message || e).slice(0, 120) }); });
+      }
+      if (stageNow && stageNow.ok) await this.applyStage(m, planStage(stageNow, this.mem, Date.now(), this.policy));
     } finally { this.busy = false; }
+  }
+  // What planStage decided: take a free spot, grant one person up or down, thank them, log a full Stage once.
+  async applyStage(m, d) {
+    if (!d) return;
+    if (d.log) this.note('guard.stage', { note: d.log });
+    for (const a of d.actions) {
+      const args = a.op === 'stage.set' ? { on: !!a.on } : { person_id: a.person_id, on: !!a.on };
+      try { const v = await this.ctx.bot.room(m.session_id, a.op, args); this.note('guard.action', { op: a.op, why: d.note, ok: true, v }); }
+      catch (e) { this.note('guard.action', { op: a.op, why: d.note, ok: false, error: String((e && e.message) || e).slice(0, 200) }); }
+    }
+    if (!d.thanks) return;
+    try { await this.greet(d.thanks); this.note('guard.stage_thanks', { spoken: !!this.policy.voice }); }
+    catch (e) { this.note('guard.stage_thanks', { ok: false, text: String((e && e.message) || e).slice(0, 160) }); }
   }
   // Leave the room and join it again at the next tick: a page start, the one way a GifOS page takes back a pass that
   // moved to another meeting. The new seat loads the credentials and proves its key again (plan() from 'waiting').
@@ -301,6 +351,17 @@ export class RoomGuard {
     this.note('guard.action', { op: 'guard.rejoin', why, ok: true });
     this.meetingId = null; this.nextJoin = 0;
     this.mem.role = 'waiting';
+  }
+  // Chat first (the line people can read), then the same words aloud when the policy has a voice. A voice that
+  // fails (no Kokoro on this box) is noted and never fails the greeting: the chat line already went.
+  async greet(text) {
+    await this.sendChat(text);
+    if (!this.policy.voice) return;
+    try {
+      const said = await this.ctx.bot.interject(this.live().session_id, text.replace(/https?:\/\/\S+/g, '').slice(0, 400), { voice: this.policy.voice });
+      if (!said || said.applied === false) throw new Error((said && said.gap) || 'Meeting Bot cannot speak yet');
+    }
+    catch (e) { this.note('guard.voice_failed', { text: String((e && e.message) || e).slice(0, 160) }); }
   }
   async sendChat(text) {
     const m = this.live(); if (!m) throw new Error('The bot is not in the room.');
@@ -312,14 +373,21 @@ export class RoomGuard {
     await this.ctx.bot.interject(m.session_id, text);
   }
   // Every chat or spoken line from a person in this room reaches the handler, on the lead only (one answer per line).
+  // Stage on: only the bot that is on the Stage, and only the person it promoted. The join greeting is the other
+  // thing this bot says. a line with a seat id is matched by id; one without is matched by name only
+  // while the name is unique in the room (shouldAnswer).
   hookLines() {
     if (!this.handler || !this.ctx.transcript || typeof this.ctx.transcript.onLine !== 'function') return;
     const ours = () => new Set(typeof this.ctx.ourNames === 'function' ? this.ctx.ourNames() : [this.botName()]);
     const fn = (row) => {
       if (!row || row.meeting_id !== this.meetingId || ours().has(row.speaker) || (row.kind !== 'chat' && row.kind !== 'speech')) return;
-      if (this.mem.role !== 'lead') return;
+      const msg = { text: row.text, from: row.speaker, fromId: row.speaker_id || '', kind: row.kind, at: row.ts };
+      if (this.policy.stage) {
+        if (!shouldAnswer(this.mem, msg)) return;
+        if (!noteLine(this.mem, msg, this.policy).answer) return;
+      } else if (this.mem.role !== 'lead') return;
       const room = { meeting_id: this.meetingId, link: this.policy.link, sendChat: (t) => this.sendChat(String(t).slice(0, 2000)), say: (t) => this.say(String(t).slice(0, 2000)) };
-      Promise.resolve().then(() => this.handler({ text: row.text, from: row.speaker, kind: row.kind, at: row.ts }, room))
+      Promise.resolve().then(() => this.handler(msg, room))
         .catch((e) => this.note('guard.handler_error', { text: String((e && e.message) || e).slice(0, 200) }));
     };
     const off = this.ctx.transcript.onLine(fn);
@@ -333,6 +401,11 @@ export async function startGuardsFromConfig(ctx, file, opts = {}) {
   const conf = JSON.parse(fs.readFileSync(file, 'utf8'));
   const list = Array.isArray(conf.guards) ? conf.guards : [conf];
   const out = [];
-  for (const p of list) out.push(await new RoomGuard(ctx, normalizePolicy(p, path.dirname(path.resolve(file))), opts).start());
+  for (const p of list) {
+    const pol = normalizePolicy(p, path.dirname(path.resolve(file)));
+    // The bot's picture is read when its browser starts, which is after this: the first guard with one sets it.
+    if (pol.picture && opts.cfg && !opts.cfg.botPicture) opts.cfg.botPicture = pol.picture;
+    out.push(await new RoomGuard(ctx, pol, opts).start());
+  }
   return out;
 }
