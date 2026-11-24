@@ -34,7 +34,7 @@ function fakeCtx() {
 
 test('a guard whose meeting session vanished (a site deploy) takes its seat again on its own', async () => {
   const ctx = fakeCtx();
-  const g = new RoomGuard(ctx, normalizePolicy({ link: 'https://gifos.app/meet/welcome', mode: 'admin', host_password: 'x', greet: false }, '/'));
+  const g = new RoomGuard(ctx, normalizePolicy({ link: 'https://gifos.app/meet#room=welcome', mode: 'admin', host_password: 'x', greet: false }, '/'));
   await g.tick();
   assert.equal(ctx.joins, 1);
   ctx.dropSession('mt_1');

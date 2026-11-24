@@ -11,7 +11,7 @@ import { createServer } from '../../src/server.js';
 import { createContext } from '../../src/context.js';
 import { loadConfig } from '../../src/config.js';
 import { MeetingStore, publicView } from '../../src/meetings.js';
-import { meetingLink, gifosHostAllowed, roomFromLink } from '../../src/links.js';
+import { meetingLink, gifosHostAllowed, roomFromLink, verifierFromLink } from '../../src/links.js';
 import { parseWhen, meetingInvite, assertNotPast, PAST_GRACE_MS } from '../../src/invite.js';
 import { kokoroDtypeFor } from '../../src/voice/kokoro.js';
 import { labelBotLines } from '../../src/tools/shared.js';
@@ -20,28 +20,29 @@ import { tmpHome } from './fixtures/tmp-home.js';
 
 const BANNER = 'Your network blocks the direct connections this meeting needs. People outside your network cannot connect to this meeting.';
 
-test('a plain room is /meet/<room>; an admin room is /meet/<room>/<verifier>; relay stays run.html', () => {
+test('a plain room is /meet#room=<room>; an admin room adds &v=<verifier>; relay stays run.html', () => {
   const av = 'f'.repeat(24);
-  assert.equal(meetingLink('https://gifos.app/', 'abc123'), 'https://gifos.app/meet/abc123');
+  assert.equal(meetingLink('https://gifos.app/', 'abc123'), 'https://gifos.app/meet#room=abc123');
   assert.equal(roomFromLink(meetingLink('https://gifos.app', 'abc123')), 'abc123');
   const admin = meetingLink('https://gifos.app', 'abc123', { verifier: av });
-  assert.equal(admin, 'https://gifos.app/meet/abc123/' + av);
+  assert.equal(admin, 'https://gifos.app/meet#room=abc123&v=' + av);
   assert.equal(roomFromLink(admin), 'abc123');
+  assert.equal(verifierFromLink(admin), av);
   assert.equal(roomFromLink('https://gifos.app/meet/abc123/' + av + '/'), 'abc123');
   // GifOS 0.9.26 has no town hall: the option is gone and changes nothing.
-  assert.equal(meetingLink('https://gifos.app', 'abc123', { townHall: true }), 'https://gifos.app/meet/abc123');
+  assert.equal(meetingLink('https://gifos.app', 'abc123', { townHall: true }), 'https://gifos.app/meet#room=abc123');
   assert.match(meetingLink('https://gifos.app', 'abc123', { relay: 'wss://r.example' }), /\/run\.html#v=abc123&relay=/);
   assert.match(meetingLink('https://gifos.app', 'abc123', { verifier: av, relay: 'wss://r.example' }), /\/run\.html#v=abc123&av=f{24}&relay=/);
 });
 
 test('the bot joins only GifOS: GIFOS_URL, gifos.app, or this computer', () => {
-  assert.equal(gifosHostAllowed('https://gifos.app/meet/abc', 'https://gifos.app'), true);
-  assert.equal(gifosHostAllowed('https://beta.gifos.app/meet/abc', 'https://gifos.app'), true);
+  assert.equal(gifosHostAllowed('https://gifos.app/meet#room=abc', 'https://gifos.app'), true);
+  assert.equal(gifosHostAllowed('https://beta.gifos.app/meet#room=abc', 'https://gifos.app'), true);
   assert.equal(gifosHostAllowed('http://127.0.0.1:19510/run.html#v=abc', 'https://gifos.app'), true);
   assert.equal(gifosHostAllowed('https://meet.example.org/meet/abc', 'https://meet.example.org'), true);
   assert.equal(gifosHostAllowed('https://evil.example.com/meet/abc', 'https://gifos.app'), false);
   assert.equal(gifosHostAllowed('https://gifos.app.evil.example.com/meet/abc', 'https://gifos.app'), false);
-  assert.equal(gifosHostAllowed('http://gifos.app/meet/abc', 'https://gifos.app'), false);
+  assert.equal(gifosHostAllowed('http://gifos.app/meet#room=abc', 'https://gifos.app'), false);
 });
 
 test('a date or time of day that does not exist is refused, not rolled over', () => {
@@ -57,7 +58,7 @@ test('a date or time of day that does not exist is refused, not rolled over', ()
 
 test('a start that has already passed is refused; a few minutes late or no start is fine', () => {
   const now = Date.parse('2026-10-24T20:00:00Z');
-  const inv = (start) => meetingInvite({ title: 'x', link: 'https://gifos.app/meet/abc', start, timezone: 'UTC' });
+  const inv = (start) => meetingInvite({ title: 'x', link: 'https://gifos.app/meet#room=abc', start, timezone: 'UTC' });
   assert.throws(() => assertNotPast(inv('2020-01-01T09:00'), now), /in the past/);
   assert.throws(() => assertNotPast(inv('2026-10-24T19:30'), now), /in the past/);
   assert.doesNotThrow(() => assertNotPast(inv('2026-10-24T19:50'), now));
@@ -126,7 +127,7 @@ test('a join to a host that is not GifOS fails at once and never opens the page'
 
 test('meeting_status and get_meeting_state warn when the network blocks the meeting, and say nothing otherwise', async () => {
   const { bot, call } = await setup();
-  const m = json(await call('test_join', { link: 'https://gifos.app/meet/room-one' }));
+  const m = json(await call('test_join', { link: 'https://gifos.app/meet#room=room-one' }));
   assert.equal('warning' in json(await call('meeting_status', { meeting_id: m.meeting_id })), false);
   assert.equal('warning' in json(await call('get_meeting_state', { meeting_id: m.meeting_id })), false);
   bot.banner = BANNER;
@@ -144,7 +145,7 @@ test('a join under the network banner says reach turn-only; a join without it cl
   assert.equal('reach' in plain, false);
   assert.equal('reach' in json(await call('get_meeting_state', { meeting_id: plain.meeting_id })), false);
   bot.banner = BANNER;
-  const blocked = json(await call('test_join', { link: 'https://gifos.app/meet/room-three' }));
+  const blocked = json(await call('test_join', { link: 'https://gifos.app/meet#room=room-three' }));
   assert.equal(blocked.reach, 'turn-only');
 });
 

@@ -7,14 +7,14 @@ import { roomPageOp, ROOM_OPS } from '../../src/room.js';
 
 // Siblings have their own names; a visitor may take any name, a sibling's too.
 const B1 = 'Welcome Bot 1', B2 = 'Welcome Bot 2';
-const pol = (o) => normalizePolicy(Object.assign({ link: 'https://gifos.app/meet/welcome', credentials: '/x/sub.gif' }, o || {}), '/');
+const pol = (o) => normalizePolicy(Object.assign({ link: 'https://gifos.app/meet#room=welcome', credentials: '/x/sub.gif' }, o || {}), '/');
 const st = (o) => Object.assign({ supported: true, seated: true, participants: 3, me: 'me', admin_room: false, host: false,
   capture: { on: false, mine: false, can_take: false }, password_set: false, password_ok: true, locked_out: false,
   subscription: null, blur_all: { offered: false, on: false }, people: [] }, o || {});
 const ops = (p) => p.actions.map((a) => a.op);
 
 test('policy: an open room needs credentials, a room with a host needs its password; defaults keep no password', () => {
-  assert.throws(() => normalizePolicy({ link: 'https://gifos.app/meet/x' }), /credentials/);
+  assert.throws(() => normalizePolicy({ link: 'https://gifos.app/meet#room=x' }), /credentials/);
   assert.throws(() => normalizePolicy({ link: 'https://gifos.app/meet/x', mode: 'admin' }), /host_password/);
   const p = pol();
   assert.equal(p.password, null); assert.equal(p.blur_all, true); assert.equal(p.vote_out, undefined, 'no ban list: removing someone is a password'); assert.equal(p.greet, defaultGreeting(true)); assert.equal(p.rank, 0);

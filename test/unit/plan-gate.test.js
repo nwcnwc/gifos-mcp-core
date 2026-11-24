@@ -26,7 +26,7 @@ test('a meeting the bot joins reads the plan; Meeting Bot\'s control, probe and 
   assert.deepEqual(meeting.plan(), [null, null], 'a session reads no plan before the host says which meeting it is');
   assert.deepEqual(control.plan(), [null, null]);
   assert.equal(meeting.win.localStorage.getItem('other'), 'x', 'other keys are untouched');
-  meeting.post({ ns: 'gifos-meet', op: 'join', control: false, link: 'https://gifos.app/meet/welcome' });
+  meeting.post({ ns: 'gifos-meet', op: 'join', control: false, link: 'https://gifos.app/meet#room=welcome' });
   control.post({ ns: 'gifos-meet', op: 'join', control: true, room: 'abc' });
   probe.post({ ns: 'gifos-meet', op: 'join', control: true, room: 'abc' });
   assert.deepEqual(meeting.plan(), ['C', 'W'], 'the guarded (joined) meeting carries the plan');

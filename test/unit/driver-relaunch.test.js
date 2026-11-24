@@ -64,13 +64,13 @@ test('isDeadPage knows Playwright\'s closed, crashed and detached errors, and no
 test('a site update (the old frame answers "Target ... closed", no event seen): the failed call drops the meeting, the next one relaunches', async () => {
   const { d, b, lost, done } = makeDriver();
   try {
-    const s1 = await d.join('https://gifos.app/meet/welcome', '');
+    const s1 = await d.join('https://gifos.app/meet#room=welcome', '');
     assert.equal(s1, 'mt_1_1');
     b.frame.gone = true;   // the live case: the handle is dead but nothing said so
     await assert.rejects(d.join('https://gifos.app/meet/welcome', ''), /Target page, context or browser has been closed/);
     assert.equal(lost.length, 1, 'onLost heard it once');
     assert.deepEqual(lost[0].ids, ['mt_1_1'], 'with the meeting that went');
-    const s2 = await d.join('https://gifos.app/meet/welcome', '');
+    const s2 = await d.join('https://gifos.app/meet#room=welcome', '');
     assert.equal(b.n, 2, 'a fresh browser was started');
     assert.equal(b.ctxs[0].closed, true, 'the old one was closed first (it holds the profile)');
     assert.equal(s2, 'mt_2_2');
@@ -79,7 +79,7 @@ test('a site update (the old frame answers "Target ... closed", no event seen): 
     for (let i = 3; i <= 5; i++) {
       b.frame.gone = true;
       await d.join('x', '').catch(() => {});
-      await d.join('https://gifos.app/meet/welcome', '');
+      await d.join('https://gifos.app/meet#room=welcome', '');
       assert.equal(b.n, i);
     }
     assert.equal(lost.length, 4);
@@ -94,7 +94,7 @@ test('the tab moved (framedetached on Meeting Bot\'s frame): lost at once, the n
     b.app.emit('framedetached', b.frame);
     assert.equal(lost.length, 1);
     assert.match(lost[0].why, /frame is gone/);
-    const s = await d.join('https://gifos.app/meet/welcome', '');
+    const s = await d.join('https://gifos.app/meet#room=welcome', '');
     assert.equal(b.n, 2);
     assert.equal(s, 'mt_2_2');
   } finally { await d.close(); done(); }
@@ -114,12 +114,12 @@ test('another frame detaching (a meeting frame) is not a loss', async () => {
 test('the browser died (its context closed): lost, then relaunched', async () => {
   const { d, b, lost, done } = makeDriver();
   try {
-    await d.join('https://gifos.app/meet/welcome', '');
+    await d.join('https://gifos.app/meet#room=welcome', '');
     b.app.closed = true; b.frame.gone = true;
     b.ctxs[0].closed = true; b.ctxs[0].emit('close');
     assert.equal(lost.length, 1);
     assert.match(lost[0].why, /browser closed/);
-    await d.join('https://gifos.app/meet/welcome', '');
+    await d.join('https://gifos.app/meet#room=welcome', '');
     assert.equal(b.n, 2);
   } finally { await d.close(); done(); }
 });

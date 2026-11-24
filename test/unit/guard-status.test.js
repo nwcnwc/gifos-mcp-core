@@ -15,7 +15,7 @@ function fakeCtx(people) {
   };
   return ctx;
 }
-const policy = () => normalizePolicy({ link: 'https://gifos.app/meet/r', mode: 'admin', host_password: 'x', greet: false, blur_all: false }, '/');
+const policy = () => normalizePolicy({ link: 'https://gifos.app/meet#room=r', mode: 'admin', host_password: 'x', greet: false, blur_all: false }, '/');
 
 test('status says seated and when a sibling holding the room was last seen', async () => {
   let people = [{ id: 'me', admin: true }, { id: 'sib', admin: true }];

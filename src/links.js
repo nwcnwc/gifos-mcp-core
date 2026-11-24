@@ -52,13 +52,14 @@ function base(gifosUrl) {
 }
 
 // A meeting link. verifier makes it a room the host runs (admin room).
-// 404.html routes /meet/<room> and /meet/<room>/<verifier> to
-// run.html#v=<room>[&av=<verifier>]. The hash form stays only when the link
-// needs relay=, which that path does not carry. (GifOS 0.9.26 has no town
-// hall: the meeting types are open, admin and join.)
+// /meet#room=<room>[&v=<verifier>]: the room rides in the fragment, which a
+// browser never sends, so no server or log reads which meeting it is. The
+// site's router opens it as run.html#v=<room>[&av=<verifier>]. The page's own
+// hash form stays only when the link needs relay= (a test server). (GifOS
+// 0.9.26 has no town hall: the meeting types are open, admin and join.)
 export function meetingLink(gifosUrl, room, { relay, verifier } = {}) {
   if (!relay) {
-    return base(gifosUrl) + '/meet/' + room + (verifier ? '/' + verifier : '');
+    return base(gifosUrl) + '/meet#room=' + room + (verifier ? '&v=' + verifier : '');
   }
   const h = new URLSearchParams();
   h.set('v', room);
@@ -83,12 +84,12 @@ export function gifosHostAllowed(link, gifosUrl) {
 }
 
 // A broadcast link. The same link is the host's and the viewers': the host
-// is whoever holds the host password. at = start (unix seconds). /cast/<room>/<verifier>
-// when nothing else rides along; the hash form for a start time or relay.
+// is whoever holds the host password. at = start (unix seconds).
+// /cast#room=<room>&v=<verifier>[&at=<start>]; the page's hash form for a relay.
 // (GifOS 0.9.26 dropped the Visit link and Stream to friends.)
 export function broadcastLink(gifosUrl, room, { relay, verifier, startAt } = {}) {
   if (!verifier) throw new Error('A broadcast needs a host key.');
-  if (!startAt && !relay) return base(gifosUrl) + '/cast/' + room + '/' + verifier;
+  if (!relay) return base(gifosUrl) + '/cast#room=' + room + '&v=' + verifier + (startAt ? '&at=' + Math.floor(Number(startAt) / 1000) : '');
   const h = new URLSearchParams();
   h.set('v', room);
   h.set('av', verifier);
@@ -98,35 +99,43 @@ export function broadcastLink(gifosUrl, room, { relay, verifier, startAt } = {})
   return base(gifosUrl) + '/run.html#' + h.toString();
 }
 
-// A broadcast link in either form: /cast/<room>/<verifier>, or a hash with bc.
+// The fields a meeting link names, whatever its form: the fragment link
+// (/meet|cast#room=<room>[&v=<verifier>]), the path link shared before
+// (/meet|cast/<room>[/<verifier>]), or the page's own hash
+// (run.html#v=<room>[&av=<verifier>][&bc=1]). null when it names no room.
+function linkFields(link) {
+  let u;
+  try { u = new URL(String(link)); } catch (e) { return null; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const h = new URLSearchParams(u.hash.replace(/^#/, ''));
+  const kind = /^\/(meet|cast)(?:\/|$)/i.exec(u.pathname);
+  const path = /^\/(?:meet|cast)\/([A-Za-z0-9-]{1,64})(?:\/([a-fA-F0-9]{16,64}))?\/?$/.exec(u.pathname);
+  let room = '', verifier = '', cast = !!kind && kind[1].toLowerCase() === 'cast';
+  if (path) { room = path[1]; verifier = path[2] || ''; }
+  else if (kind && h.get('room')) { room = h.get('room'); verifier = h.get('v') || ''; }
+  else if (!kind) { room = h.get('v') || ''; verifier = h.get('av') || ''; cast = !!h.get('bc'); }
+  if (!ROOM_RE.test(room)) return null;
+  if (verifier && !/^[a-fA-F0-9]{16,64}$/.test(verifier)) verifier = '';
+  return { room, verifier: verifier.toLowerCase(), cast };
+}
+
+// A broadcast link in any form: /cast#room=<room>&v=<verifier>, the older
+// /cast/<room>/<verifier>, or the page's hash with bc.
 export function isBroadcastLink(link) {
-  let u;
-  try { u = new URL(String(link)); } catch (e) { return false; }
-  if (/^\/cast\/[A-Za-z0-9-]{1,64}\/[a-fA-F0-9]{16,64}\/?$/.test(u.pathname)) return true;
-  const h = new URLSearchParams(u.hash.replace(/^#/, ''));
-  return !!h.get('bc') && !!h.get('v');
+  const f = linkFields(link);
+  return !!(f && f.cast && f.verifier);
 }
 
-// The verifier (host key check) in a link: /meet|cast/<room>/<verifier> or av=.
+// The verifier (host key check) in a link, in any form (see linkFields).
 export function verifierFromLink(link) {
-  let u;
-  try { u = new URL(String(link)); } catch (e) { return ''; }
-  const pretty = /^\/(?:meet|cast)\/[A-Za-z0-9-]{1,64}\/([a-fA-F0-9]{16,64})\/?$/.exec(u.pathname);
-  if (pretty) return pretty[1].toLowerCase();
-  return (new URLSearchParams(u.hash.replace(/^#/, '')).get('av') || '').toLowerCase();
+  const f = linkFields(link);
+  return f ? f.verifier : '';
 }
 
-// Accepts the links GifOS hands out: /run.html#v=<room>[&...], /meet/<room>,
-// and /meet/<room>/<verifier> (404.html maps that to #v=<room>&av=<verifier>).
+// The room in a link, in any form GifOS hands out or handed out before (see linkFields).
 export function roomFromLink(link) {
-  let u;
-  try { u = new URL(String(link)); } catch (e) { return ''; }
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
-  const pretty = /^\/(?:meet|cast)\/([A-Za-z0-9-]{1,64})(?:\/([a-fA-F0-9]{16,64}))?\/?$/.exec(u.pathname);
-  if (pretty) return pretty[1];
-  const h = new URLSearchParams(u.hash.replace(/^#/, ''));
-  const v = h.get('v') || '';
-  return ROOM_RE.test(v) ? v : '';
+  const f = linkFields(link);
+  return f ? f.room : '';
 }
 
 export function linkParams(link) {
