@@ -16,6 +16,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { loadConfig, botCredentials } from './config.js';
 import { MeetingStore } from './meetings.js';
 import { CoreBotDriver } from './core-driver.js';
+import { SwitchBotDriver } from './switch-driver.js';
 import { MeetingBotDriver } from './driver.js';
 import { WorkerPool } from './pool.js';
 import { dropLostMeetings } from './supervisor.js';
@@ -32,7 +33,8 @@ import { log } from './log.js';
 export const ENV_HELP = 'Environment: GIFOS_URL, GIFOS_RELAY, GIFOS_BOT_NAME, GIFOS_BOT_PASSWORD, GIFOS_STT_APP,\n' +
   'GIFOS_MCP_HOME, GIFOS_HEADLESS, GIFOS_CHROME, GIFOS_TIMEOUT_MS, GIFOS_MCP_HTTP_TOKEN, GIFOS_MCP_LAZY,\n' +
   'GIFOS_TRANSCRIPT_POLL_MS, GIFOS_TTS_ENGINE, GIFOS_TTS_APP, GIFOS_TTS_URL, GIFOS_TTS_VOICE, GIFOS_KOKORO_URL, GIFOS_STT_URL,\n' +
-  'GIFOS_MAX_MEETINGS, GIFOS_CAPACITY_NEAR, GIFOS_SCHEDULE_HORIZON_MS, GIFOS_WORKERS, GIFOS_WORKER_ROOMS, GIFOS_BOT_MODE (core: no browser).\n' +
+  'GIFOS_MAX_MEETINGS, GIFOS_CAPACITY_NEAR, GIFOS_SCHEDULE_HORIZON_MS, GIFOS_WORKERS, GIFOS_WORKER_ROOMS,\n' +
+  'GIFOS_BOT_MODE (core: no browser; auto: the core first, the browser only where the core cannot join yet).\n' +
   'There is no model key: the assistant calling the tools writes every word the bot says.\n' +
   'Kokoro weights are downloaded once into GIFOS_MCP_HOME/kokoro from Hugging Face, revision ' + KOKORO_REVISION.slice(0, 12) + ', and checked by SHA-256.\n';
 
@@ -60,13 +62,17 @@ export async function createRuntime(env = process.env) {
     meetings.update(m.meeting_id, { thinking: !!on });
     events.append({ type: 'meeting.state', meeting_id: m.meeting_id, data: { thinking: !!on, transcribing: !!m.transcribing } });
   }
-  // One worker: the Meet Bot runs in this process. Several: this process is
-  // the supervisor and each worker is a child with its own browser.
-  const bot = cfg.botMode === 'core'
-    ? new CoreBotDriver(cfg, creds)
-    : cfg.workers > 1
+  // The browser driver, exactly as a plain 'browser' server makes it: one worker runs the Meet Bot in this
+  // process, several make this process the supervisor with a child per worker. 'auto' hands this factory to
+  // SwitchBotDriver, which calls it at most once, so a process whose meetings all run on the core never builds it.
+  const makeBrowser = () => (cfg.workers > 1
     ? new WorkerPool(cfg, creds, { workers: cfg.workers, rooms: cfg.workerRooms, onThinking })
-    : new MeetingBotDriver(cfg, creds, null, { queue: new SpeechQueue({ onThinking }), kokoroPromise });
+    : new MeetingBotDriver(cfg, creds, null, { queue: new SpeechQueue({ onThinking }), kokoroPromise }));
+  const bot = cfg.botMode === 'core'
+    ? new CoreBotDriver(cfg, creds, { kokoroPromise })
+    : cfg.botMode === 'auto'
+    ? new SwitchBotDriver(new CoreBotDriver(cfg, creds, { kokoroPromise }), makeBrowser)
+    : makeBrowser();
   const live = new LiveTranscript(cfg.home);
   const hide = (text) => scrub(text, [creds.password]);
   const captions = watchCaptions({ meetings, bot, live, intervalMs: cfg.voice.pollMs, botName: () => (typeof bot.botNames === 'function' ? bot.botNames() : creds.name), scrubText: hide });

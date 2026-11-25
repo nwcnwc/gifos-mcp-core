@@ -272,7 +272,9 @@ export class RoomGuard {
     if (this.live()) return this.live();
     if (Date.now() < this.nextJoin) return null;
     try {
-      const { meeting } = await this.ctx.joinByLink(this.policy.link, this.policy.join_password, this.policy.topic || 'guard');
+      // guard: true says this join needs room ops (guard.state and the rest); GIFOS_BOT_MODE=auto's SwitchBotDriver
+      // reads it to probe the core for them before trusting a core seat, and uses the browser bot when they are gone.
+      const { meeting } = await this.ctx.joinByLink(this.policy.link, this.policy.join_password, this.policy.topic || 'guard', undefined, { guard: true });
       this.meetingId = meeting.meeting_id; this.joinFails = 0;
       // A new seat starts over, but keeps the clock of its last fresh join for a moved pass (one a minute, never a storm).
       this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake });

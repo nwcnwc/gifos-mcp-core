@@ -1,15 +1,22 @@
 // The Meeting Bot with no browser (GIFOS_BOT_MODE=core). Each meeting is a participant of the GifOS core running in
 // this process, through the agent SDK's core transport (@gifos-app/agent): the meeting's own code, loaded from the
-// meeting's site, over real WebRTC data channels. It holds a seat, reads people, chat and the captions people share,
-// posts chat, and leaves. It has no voice, camera or recording yet: those tools answer with their gap, as for a
-// Meeting Bot app without the method.
+// meeting's site, over real WebRTC: data channels, and media through the core's Node media plane (it carries its
+// row's duties like any seat). It holds a seat, reads people, chat and the captions people share, posts chat, speaks
+// with this process's Kokoro, and leaves. It has no camera, screenshot or recording yet: those tools answer with their
+// gap, as for a Meeting Bot app without the method. Room ops ride the page's 'room' agent action once a site has it.
 //
 // Surface: the same duck-typed bot the tools call (ensureStarted, join, leave, say, people, transcript, chat,
-// transcribe, networkWarning, botNames, botNameFor, setLook, info, close, room).
+// transcribe, networkWarning, botNames, botNameFor, setLook, info, close, room, interject, meetingState, raiseHand).
 import path from 'node:path';
+import { ROOM_OPS } from './room.js';
 import { log } from './log.js';
 
-export const CORE_ROOM_GAP = 'This room action needs the browser Meeting Bot; the bot runs with no browser (GIFOS_BOT_MODE=core).';
+// The page's 'room' action (agenda, app, stage, host, guard.*) does not exist on any GifOS site yet (src/room.js is
+// the browser bot's own version, reached in its meeting frame). Until a site ships it every core room op is a gap.
+export const CORE_ROOM_GAP = "This GifOS site's core has no room actions yet; the browser Meeting Bot is needed for this.";
+// The core path speaks through the meeting's Node media plane with this process's Kokoro; no Kokoro here (GIFOS_TTS_ENGINE
+// off, or its weights failed to load) -> no voice. Chat still carries the words.
+export const CORE_VOICE_GAP = 'The bot has no voice here: this process has no Kokoro voice engine (GIFOS_TTS_ENGINE).';
 
 
 // The meeting page's address in agent mode (the SDK's own rule).
@@ -30,6 +37,11 @@ export class CoreBotDriver {
     this.error = '';
     this.sessions = new Map();   // id -> { meet, link, lines: [], chat: [], people: [] }
     this.seq = 0;
+    // Kokoro, when this process has it (same object MeetingBotDriver's hostServices() reads): loads in the
+    // background, so interject() must not fail just because the first call lands before it is ready.
+    this.kokoroPromise = opts.kokoroPromise || null;
+    this.kokoro = opts.kokoro || null;
+    if (this.kokoroPromise) this.kokoroPromise.then((v) => { this.kokoro = v || null; }, () => { this.kokoro = null; });
   }
 
   sdk() { return this.opts.sdk ? Promise.resolve(this.opts.sdk) : import('@gifos-app/agent'); }
@@ -48,7 +60,7 @@ export class CoreBotDriver {
       name: this.creds.name, relay: this.cfg.relay || '', room, password: password || '',
       profile: path.join(this.cfg.home, 'core-bot'), coreKeys: this.cfg.coreKeys && this.cfg.coreKeys.length ? this.cfg.coreKeys : undefined,
     });
-    const meet = new S.Meeting(transport, { tts: null });
+    const meet = new S.Meeting(transport, { tts: (text, opts) => this.ttsFor(text, opts) });
     meet.core = true;
     const id = 'c' + (++this.seq);
     const s = { meet, link, lines: [], chat: [], people: [] };
@@ -103,9 +115,46 @@ export class CoreBotDriver {
   async transcript(id) { return this.session(id).lines.join('\n'); }
   async chat(id) { return this.session(id).chat.slice(); }
   async networkWarning() { return ''; }
-  async room() { throw new Error(CORE_ROOM_GAP); }
+  // agenda, app, stage, host, guard.* (src/room.js ROOM_OPS), as ONE action on the meeting's agent contract: the
+  // future page runs the same switch roomPageOp runs and answers the same { ok, v }/{ ok, error } shape. No site
+  // signs that action yet, so every call answers CORE_ROOM_GAP until one does (SwitchBotDriver reads this message
+  // to fall back to the browser bot).
+  async room(id, op, args) {
+    if (!ROOM_OPS.includes(op)) throw new Error('Unknown room op.');
+    const s = this.session(id);
+    try {
+      const r = await s.meet.call('room', { op, args: args || {} });
+      return r.v;
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if (/^No such action: room\.?$/.test(msg)) throw new Error(CORE_ROOM_GAP);
+      throw e;
+    }
+  }
   // the browser bot's whenMethod shape: { applied, result } or { applied: false, gap }
   async raiseHand(id, on) { const r = await this.session(id).meet.hand(!!on); return { applied: true, result: { hand: !!(r && r.up) } }; }
+  // Spoken interjection, through the SDK's say() (the tts slot every Meeting is built with: ttsFor, bound once, so a
+  // Kokoro that finishes loading after the join still gets used on the next line). No voice engine in this process
+  // -> the gap shape, same as a missing Meeting Bot method: callers (guard.greet) already posted the words to chat.
+  async interject(id, text, opts) {
+    const s = this.session(id);
+    try {
+      const r = await s.meet.say(String(text), opts && opts.voice ? { voice: String(opts.voice) } : {});
+      return { applied: true, result: r == null ? null : r };
+    } catch (e) {
+      if (String((e && e.message) || e) === CORE_VOICE_GAP) return { applied: false, gap: CORE_VOICE_GAP };
+      throw e;
+    }
+  }
+  // tts slot for S.Meeting: kokoro-js wrapped as {(text,opts)->{wav}}, the same engine MeetingBotDriver's
+  // hostServices() hands the browser. Bound (not a one-time closure) so a Kokoro that is still loading at join time
+  // is picked up the moment it is ready.
+  async ttsFor(text, opts) {
+    if (!this.kokoro && this.kokoroPromise) { try { this.kokoro = await this.kokoroPromise; } catch (e) { this.kokoro = null; } }
+    if (!this.kokoro) throw new Error(CORE_VOICE_GAP);
+    const voice = opts && opts.voice ? String(opts.voice) : undefined;
+    return { wav: await this.kokoro.speak(String(text), voice) };
+  }
   async meetingState(id) {
     const st = await this.session(id).meet.state();
     const me = (st && st.me) || {};

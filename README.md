@@ -46,10 +46,19 @@ or install a browser. With none of these the server stops with a message saying 
 
 `GIFOS_BOT_MODE=core` needs no browser. The bot (src/core-driver.js) runs each meeting on the meeting's own core,
 through `@gifos-app/agent`, over WebRTC data channels; Node 22 or later. It reads people, chat and the
-captions people share, posts chat and raises a hand. Voice, camera, recording and room actions answer that they need
-the browser bot. A meeting link is untrusted: only a core signed by GifOS runs, in a child process that cannot write
+captions people share, posts chat and raises a hand. It speaks when Kokoro is loaded in this process (the same
+engine the browser bot uses); camera, recording and room actions (the agenda, apps, the stage, host sign-in, a
+guard holding a room) answer that they need the browser bot, since no GifOS site signs those agent actions yet.
+A meeting link is untrusted: only a core signed by GifOS runs, in a child process that cannot write
 files, start programs or read this server's environment (`@gifos-app/agent` docs/core-trust.md). `GIFOS_CORE_KEYS`
 (comma-separated base64 Ed25519 public keys) trusts your own signing key instead, for a core you built yourself.
+
+`GIFOS_BOT_MODE=auto` (src/switch-driver.js) tries the core first and keeps the browser for later: a process
+whose meetings all join on the core never starts a browser. A join falls back to the browser when the core
+cannot do it (core mode off in the SDK, a site with no signed core, a join timeout). A guard (src/guard.js, which
+needs room ops) checks the core's `host.state` right after joining; a core with no room actions yet leaves that
+seat and joins with the browser instead, so a held room is never stuck on a path that cannot drive it.
+The `status` tool (or any `info()` caller) tags each live meeting `core` or `browser`.
 
 ## Endpoints and downloads
 

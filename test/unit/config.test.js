@@ -21,6 +21,13 @@ test('defaults', () => {
   assert.throws(() => loadConfig({ GIFOS_URL: 'gifos.app' }), /GIFOS_URL/);
 });
 
+test('GIFOS_BOT_MODE: browser by default, or core or auto; anything else is browser too', () => {
+  assert.equal(loadConfig({ GIFOS_MCP_HOME: '/x' }).botMode, 'browser');
+  assert.equal(loadConfig({ GIFOS_MCP_HOME: '/x', GIFOS_BOT_MODE: 'core' }).botMode, 'core');
+  assert.equal(loadConfig({ GIFOS_MCP_HOME: '/x', GIFOS_BOT_MODE: 'auto' }).botMode, 'auto');
+  assert.equal(loadConfig({ GIFOS_MCP_HOME: '/x', GIFOS_BOT_MODE: 'bogus' }).botMode, 'browser');
+});
+
 test('there is no text model: no model URL, key or name is read, and speech is Kokoro here', () => {
   // Old settings are ignored, not used: the assistant calling the tools writes every line.
   const env = { GIFOS_LLM_KEY: 'sk-test-key', GIFOS_LLM_URL: 'https://api.example.test/v1', GIFOS_LLM_MODEL: 'm', GIFOS_CONVERSATION_VOICE: 'local' };

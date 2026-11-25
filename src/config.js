@@ -37,7 +37,9 @@ export function loadConfig(env = process.env) {
     sttApp: stt === 'none' ? '' : stt,
     // GIFOS_BOT_MODE=core: the Meeting Bot with no browser (src/core-driver.js): the meeting's own core in this process.
     // Text only (chat, the captions people share, people); voice, camera and recording need the browser bot.
-    botMode: String(env.GIFOS_BOT_MODE || '').trim() === 'core' ? 'core' : 'browser',
+    // auto (src/switch-driver.js): the core first, the browser only when a meeting's site cannot run the core path
+    // yet (no signed core, a room that needs room ops the core has no action for). Default stays browser.
+    botMode: ['core', 'auto'].includes(String(env.GIFOS_BOT_MODE || '').trim()) ? String(env.GIFOS_BOT_MODE).trim() : 'browser',
     // The core bot runs only a core signed by GifOS (@gifos-app/agent docs/core-trust.md). GIFOS_CORE_KEYS (comma-separated
     // base64 Ed25519 public keys) trusts other keys in its place: the operator's own build and tests. No tool argument and
     // no meeting link can set it.

@@ -119,11 +119,11 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   // One join per meeting at a time. A clock tick, a second tick and a
   // start_meeting for the same room share it instead of seating it twice.
   const entering = new Map();
-  function enter(m, password) {
+  function enter(m, password, opts) {
     const busy = entering.get(m.meeting_id);
     if (busy) return busy.promise;
     const job = { cancelled: false };
-    job.promise = enterOnce(m, password, job).finally(() => entering.delete(m.meeting_id));
+    job.promise = enterOnce(m, password, job, opts).finally(() => entering.delete(m.meeting_id));
     entering.set(m.meeting_id, job);
     return job.promise;
   }
@@ -152,16 +152,20 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     }
   }
 
-  async function enterOnce(m, password, job) {
+  // opts.guard: this join is a RoomGuard's (src/guard.js). It needs room ops (guard.state and the rest), which
+  // GIFOS_BOT_MODE=auto's SwitchBotDriver only knows the core can answer after it probes host.state; carried as a
+  // join option rather than a side channel, so it reaches whichever bot actually does the joining.
+  async function enterOnce(m, password, job, opts) {
     await bot.ensureStarted();
     const roomPassword = password || schedule.passwordFor(m.room) || '';
     const lang = m.language || cfg.ccLang || 'auto';
+    const guard = !!(opts && opts.guard);
     let sessionId;
     if (typeof bot.setCaptionLanguage === 'function' && !bot.workers) {
       await bot.setCaptionLanguage(lang);
-      sessionId = await bot.join(plainLink(m.link, roomPassword), roomPassword);
+      sessionId = await bot.join(plainLink(m.link, roomPassword), roomPassword, guard ? { guard: true } : undefined);
     } else {
-      sessionId = await bot.join(plainLink(m.link, roomPassword), roomPassword, { language: lang });
+      sessionId = await bot.join(plainLink(m.link, roomPassword), roomPassword, { language: lang, ...(guard ? { guard: true } : {}) });
     }
     if (job.cancelled) {
       // Ended while the join was on its way. Leave the seat it just took.
@@ -219,11 +223,11 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
   // A join by hand waits out the clock's wait on a room that crashed the
   // bot, and a crash it finds starts that wait, so asking again at once does
   // not take down the workers (and every meeting on them) a second time.
-  async function enterByHand(m, password) {
+  async function enterByHand(m, password, opts) {
     const left = clock.crashLeft(m.room, Date.now());
     if (left) throw new Error('The room crashed the bot; it can be tried again in ' + Math.ceil(left / 60000) + ' min.');
     try {
-      const joined = await enter(m, password);
+      const joined = await enter(m, password, opts);
       if (joined && joined.state === 'live') clock.crashCleared(m.room);
       return joined;
     } catch (e) {
@@ -427,7 +431,7 @@ export function createContext({ cfg, meetings, bot, live, captions, botName, bot
     // A new join with none given is transcribe only, not a past meeting's.
     if ((given || '') !== (m.instructions || '')) meetings.update(m.meeting_id, { instructions: given || '' });
     if (opts.language !== undefined) meetings.update(m.meeting_id, { language: opts.language });
-    const joined = await enterByHand(meetings.get(m.meeting_id), password);
+    const joined = await enterByHand(meetings.get(m.meeting_id), password, opts);
     if (password) rememberJoin(joined, password, topic, given);
     emit({ type: 'meeting.joined', meeting_id: joined.meeting_id, data: withInstructions({ topic: joined.topic, link: joined.link, state: 'live' }, instructionsFor(joined)) });
     return { meeting: joined };
