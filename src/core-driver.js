@@ -11,8 +11,9 @@ import path from 'node:path';
 import { ROOM_OPS } from './room.js';
 import { log } from './log.js';
 
-// The page's 'room' action (agenda, app, stage, host, guard.*) does not exist on any GifOS site yet (src/room.js is
-// the browser bot's own version, reached in its meeting frame). Until a site ships it every core room op is a gap.
+// The page's 'room' agent action (agenda, app, stage, host, guard.*) arrives after GifOS 0.9.28.30 (js/meet-agent.js
+// 'room' -> the core's own room ops; src/room.js is the browser bot's version, reached in its meeting frame). A site
+// whose core has no such action answers "No such action: room": every core room op is then this gap.
 export const CORE_ROOM_GAP = "This GifOS site's core has no room actions yet; the browser Meeting Bot is needed for this.";
 // The core path speaks through the meeting's Node media plane with this process's Kokoro; no Kokoro here (GIFOS_TTS_ENGINE
 // off, or its weights failed to load) -> no voice. Chat still carries the words.
@@ -59,6 +60,8 @@ export class CoreBotDriver {
     const transport = await S.coreTransport(agentLink(link), {
       name: this.creds.name, relay: this.cfg.relay || '', room, password: password || '',
       profile: path.join(this.cfg.home, 'core-bot'), coreKeys: this.cfg.coreKeys && this.cfg.coreKeys.length ? this.cfg.coreKeys : undefined,
+      // GIFOS_MCP_PAY_URL (testing): a local stack's payment service, as the browser bot's init script hands its page
+      payUrl: /^https?:\/\/[^\s'"]+$/.test(String(process.env.GIFOS_MCP_PAY_URL || '')) ? String(process.env.GIFOS_MCP_PAY_URL).replace(/\/$/, '') : undefined,
     });
     const meet = new S.Meeting(transport, { tts: (text, opts) => this.ttsFor(text, opts) });
     meet.core = true;
@@ -115,10 +118,10 @@ export class CoreBotDriver {
   async transcript(id) { return this.session(id).lines.join('\n'); }
   async chat(id) { return this.session(id).chat.slice(); }
   async networkWarning() { return ''; }
-  // agenda, app, stage, host, guard.* (src/room.js ROOM_OPS), as ONE action on the meeting's agent contract: the
-  // future page runs the same switch roomPageOp runs and answers the same { ok, v }/{ ok, error } shape. No site
-  // signs that action yet, so every call answers CORE_ROOM_GAP until one does (SwitchBotDriver reads this message
-  // to fall back to the browser bot).
+  // agenda, app, stage, host, guard.* (src/room.js ROOM_OPS), as ONE action on the meeting's agent contract: the page
+  // runs the same ops roomPageOp runs, on the core's state, and answers the same { ok, v }/{ ok, error } shape. An
+  // older core with no 'room' action answers CORE_ROOM_GAP (SwitchBotDriver reads this message to fall back to the
+  // browser bot).
   async room(id, op, args) {
     if (!ROOM_OPS.includes(op)) throw new Error('Unknown room op.');
     const s = this.session(id);
