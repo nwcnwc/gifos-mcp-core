@@ -44,7 +44,8 @@ The servers drive the browser already on this computer: `GIFOS_CHROME` if set, e
 Microsoft Edge, else a Chromium that `npx playwright install chromium` installed earlier. They never download
 or install a browser. With none of these the server stops with a message saying what to install.
 
-`GIFOS_BOT_MODE=core` needs no browser. The bot (src/core-driver.js) runs each meeting on the meeting's own core,
+`GIFOS_BOT_MODE=core` needs no browser, and `GIFOS_CORE_MODE=1` while core mode is opt-in in `@gifos-app/agent`
+(without it a core join is refused; under `auto` that falls back to the browser). The bot (src/core-driver.js) runs each meeting on the meeting's own core,
 through `@gifos-app/agent`, over WebRTC data channels; Node 22 or later. It reads people, chat and the
 captions people share, posts chat and raises a hand. It speaks when Kokoro is loaded in this process (the same
 engine the browser bot uses); camera, recording and room actions (the agenda, apps, the stage, host sign-in, a
