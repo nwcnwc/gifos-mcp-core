@@ -1,8 +1,8 @@
 // Guard a room: the bot holds a GifOS room as its admin and keeps the room the way its owner set it.
 //
 // A guard is one room link plus a policy:
-//   mode        'open'  an open room: the bot CAPTURES it ("Make me host") with a subscription file on a $5+
-//                       plan, so nobody else can take it or set its password (GifOS 0.9.26).
+//   mode        'open'  an open room: the bot CAPTURES it ("Make me host") with a GifOS staff pass (no plan sold
+//                       captures, 2026-11-26), so nobody else can take it or set its password (GifOS 0.9.26).
 //               'admin' a room with a host: the bot signs in as its host with host_password.
 //   credentials path of the subscription file (the GifOS credentials GIF people export from Settings > Subscription).
 //               Read once at start; its bytes go only into the bot's own browser. Never logged or returned.
@@ -112,7 +112,7 @@ export function normalizePolicy(p, base) {
     no_blur: p.no_blur === true,
     ...stage,
   };
-  if (mode === 'open' && !out.credentials) throw new Error('A public majority-rules meeting (open meeting) (mode open) is held by capture: set credentials to a subscription file on a $5+ plan.');
+  if (mode === 'open' && !out.credentials) throw new Error('A public majority-rules meeting (open meeting) (mode open) is held by capture: set credentials to a GifOS staff pass.');
   if (mode === 'admin' && !out.host_password) throw new Error('A private meeting (mode admin) needs host_password.');
   return out;
 }

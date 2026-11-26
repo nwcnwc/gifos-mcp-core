@@ -233,7 +233,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const st = await M.useFile(bytes);
         return { ok: true, v: { loaded: true, status: st && st.status ? st.status : null } };
       }
-      // "Make me host": the page's own button (shown to a $5+ subscriber in an open room nobody holds).
+      // "Make me host": the page's own button (shown to a staff-pass holder in an open room nobody holds).
       case 'guard.capture': {
         const b = w.document.getElementById('capbtn');
         if (!b) return { ok: false, error: oldSite };

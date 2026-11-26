@@ -68,7 +68,7 @@ test('the kind field takes the screen words and the old ones as synonyms, and re
 });
 
 // The role is "host" wherever a person or an agent reads it; "admin" stays only as the API value (type / mode "admin",
-// the enum, the admin_password parameter name) and in code. A public open-floor meeting can be taken over as host by a $5+ plan.
+// the enum, the admin_password parameter name) and in code. A public open-floor meeting can be taken over as host only with a GifOS staff pass.
 const API_ADMIN = /\b(?:type|mode)[:=]?\s*["'`]?admin\b["'`]?|["'`]admin["'`]|\badmin_password\b|\badmin:|\bfor admin\b|\bopen \/ admin\b|\bopen or admin\b/gi;
 const sayAdmin = (t) => /\badmins?\b|\bco-admins?\b|Make me admin/i.test(String(t).replace(API_ADMIN, ' '));
 // Every string literal with a space in a source file, comment lines dropped: what the tools return or describe.
