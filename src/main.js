@@ -24,6 +24,7 @@ import { ScheduleStore } from './schedule.js';
 import { EventLog } from './events.js';
 import { SpeechQueue } from './voice/queue.js';
 import { createContext } from './context.js';
+import { createSiteWatch } from './site.js';
 import { createServer } from './server.js';
 import { LiveTranscript, watchCaptions } from './voice/live.js';
 import { scrub } from './voice/settings.js';
@@ -34,7 +35,8 @@ export const ENV_HELP = 'Environment: GIFOS_URL, GIFOS_RELAY, GIFOS_BOT_NAME, GI
   'GIFOS_MCP_HOME, GIFOS_HEADLESS, GIFOS_CHROME, GIFOS_TIMEOUT_MS, GIFOS_MCP_HTTP_TOKEN, GIFOS_MCP_LAZY,\n' +
   'GIFOS_TRANSCRIPT_POLL_MS, GIFOS_TTS_ENGINE, GIFOS_TTS_APP, GIFOS_TTS_URL, GIFOS_TTS_VOICE, GIFOS_KOKORO_URL, GIFOS_STT_URL,\n' +
   'GIFOS_MAX_MEETINGS, GIFOS_CAPACITY_NEAR, GIFOS_SCHEDULE_HORIZON_MS, GIFOS_WORKERS, GIFOS_WORKER_ROOMS,\n' +
-  'GIFOS_BOT_MODE (core: no browser; auto: the core first, the browser only where the core cannot join yet).\n' +
+  'GIFOS_BOT_MODE (core: no browser; auto: the core first, the browser only where the core cannot join yet),\n' +
+  'GIFOS_SITE_CHECK_MS (how often to read the site\'s version.json for a new live release; default 60000, 0 never).\n' +
   'There is no model key: the assistant calling the tools writes every word the bot says.\n' +
   'Kokoro weights are downloaded once into GIFOS_MCP_HOME/kokoro from Hugging Face, revision ' + KOKORO_REVISION.slice(0, 12) + ', and checked by SHA-256.\n';
 
@@ -79,6 +81,8 @@ export async function createRuntime(env = process.env) {
   // A lost worker, or (one worker) a lost bot browser, drops its meetings back to scheduled; the clock reseats them.
   if (typeof bot.onLost === 'function') bot.onLost(dropLostMeetings({ meetings, events, captions }));
   const ctx = createContext({ cfg, meetings, bot, live, captions, botName: creds.name, botPassword: creds.password, schedule, events });
+  // A new live release on the site reloads the bot's page (src/site.js); a guard picks its own moment (src/guard.js).
+  if (cfg.siteCheckMs > 0) ctx.site = createSiteWatch({ cfg, bot, emit: (e) => events.append(e) });
   return { cfg, creds, ctx, bot, captions, hide };
 }
 
@@ -168,6 +172,7 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
     closing = true;
     captions.stopAll();
     ctx.clock.stop();
+    if (ctx.site) ctx.site.stop();
     if (typeof product.onClose === 'function') await Promise.resolve(product.onClose(ctx)).catch(() => {});
     await bot.close().catch(() => {});
     if (srv) srv.close();

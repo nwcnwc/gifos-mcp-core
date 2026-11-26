@@ -43,6 +43,13 @@
 //               (a No blur counts only when picked after the right came on). Never under a host's blur order on the
 //               bot, and with stage on only while the bot is on the Stage (the right may cover the Stage only).
 //
+// A NEW RELEASE on the site (src/site.js: version.json names another live release than the bot's page runs): the guard
+// leaves, reloads its bot on the live release, joins again and takes the room back through plan() (capture or host
+// sign-in, Blur guests, the No blur pick), so a floor raise or a new link grammar never strands it in a room fresh
+// pages cannot reach. Siblings move one at a time (siteTurn): rank 0 first while its sibling holds the room, the
+// others once a sibling is back beside them, or once its seat has been gone a minute (the new release may meet in a
+// room this old page cannot reach).
+//
 // plan() decides; it is pure (the unit tests drive it). RoomGuard runs it every few seconds against the bot's seat
 // (room.js guard.* ops) and does what it says.
 import fs from 'node:fs';
@@ -70,6 +77,8 @@ const RETAKE_EVERY_MS = 60000;  // a pass's moved ticket: one fresh join of the 
 const NOBLUR_EVERY_MS = 60000;   // one No blur pick a minute at most (a pick turns the camera on and back off)
 const NOBLUR_TRIES = 3;          // picks that did not clear this seat's picture before the guard says so and waits
 const NOBLUR_BACKOFF_MS = 600000;
+const SITE_SIBLING_GONE_MS = 60000;   // a site move: a sibling's seat gone this long moved on (or died): go too
+const SITE_WAIT_MAX_MS = 240000;      // a site move: rank N > 0 waits at most this (+60 s per rank) for its sibling
 const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
 
 // The default welcome: neutral; it adds the clear-video note only when the guard blurs everyone.
@@ -215,6 +224,35 @@ export function plan(state, policy, mem, now) {
   return out;
 }
 
+// THE SITE MOVED to release `to` and this bot's page runs another: may this seat reload now? Pure, like plan().
+// One sibling at a time, so the room always has one: rank 0 goes first while a sibling holds the room; a higher rank
+// waits until a sibling is back beside it (a new admin seat, or one that left and came back), or until no sibling has
+// been seen for SITE_SIBLING_GONE_MS (it moved to a room this page cannot reach, or it is down), or SITE_WAIT_MAX_MS.
+// Any rank waits while a sibling seen moments ago is away (it is moving now): two seats never leave at once.
+// Returns { go, why }.
+export function siteTurn(state, policy, mem, now, to) {
+  const seated = !!(state && state.supported && state.seated);
+  const amAdmin = seated && !!(state.host || (state.capture && state.capture.mine));
+  const sibs = amAdmin ? (state.people || []).filter((p) => p.id !== state.me && p.admin === true).map((p) => p.id) : [];
+  if (sibs.length) mem.siblingSeenAt = now;
+  if (!mem.site || mem.site.to !== to) mem.site = { to, at: now, seen: new Map(sibs.map((id) => [id, 0])) };
+  const s = mem.site;
+  if (!amAdmin) return { go: true, why: 'this seat holds nothing' };
+  const here = new Set(sibs);
+  if (here.size) {
+    for (const id of here) if (!s.seen.has(id)) return { go: true, why: 'a sibling is back beside this seat on a new seat' };
+    for (const [id, away] of s.seen) if (here.has(id) && away) return { go: true, why: 'a sibling left and came back' };
+    for (const [id] of s.seen) if (!here.has(id)) s.seen.set(id, s.seen.get(id) || now);
+    if (policy.rank === 0) return { go: true, why: 'rank 0 moves first while its sibling holds the room' };
+  } else {
+    for (const [id] of s.seen) s.seen.set(id, s.seen.get(id) || now);
+    const since = now - (mem.siblingSeenAt || 0);
+    if (!mem.siblingSeenAt || since >= SITE_SIBLING_GONE_MS) return { go: true, why: mem.siblingSeenAt ? 'no sibling beside this seat for ' + Math.round(since / 1000) + ' s' : 'no sibling beside this seat' };
+  }
+  if (now - s.at >= SITE_WAIT_MAX_MS + policy.rank * 60000) return { go: true, why: 'waited ' + Math.round((now - s.at) / 1000) + ' s for a sibling to move first' };
+  return { go: false, why: here.size ? 'a sibling of lower rank moves first' : 'a sibling seen moments ago is away (moving now)' };
+}
+
 // THE RE-PICK (policy no_blur). A host's own No blur counts only when picked in the meeting after the room's clear right
 // came on (the page's 'repick' rule, the same for a person), so a bot that holds the room picks it again through the
 // camera chooser when its picture is held. level > 0 while the right is on and no host order holds the bot: not
@@ -284,6 +322,9 @@ export class RoomGuard {
     this.credB64 = policy.credentials ? fs.readFileSync(policy.credentials).toString('base64') : '';
     this.joinFails = 0; this.nextJoin = 0; this.unhook = null;
     if (ctx.credentials && typeof ctx.credentials.guardRoom === 'function') ctx.credentials.guardRoom(roomFromLink(policy.link));
+    // A new live release on the site: this guard picks when its bot reloads (siteTurn), not the watch.
+    if (ctx.site && typeof ctx.site.claim === 'function') ctx.site.claim();
+    this.siteMove = null;   // { from, to, at, why }: this guard left for a new release and is not back in the room yet
   }
   botName() { const n = typeof this.ctx.ourNames === 'function' ? this.ctx.ourNames() : [this.ctx.botName]; return String((n && n[0]) || this.ctx.botName || this.policy.name || ''); }
   async start() {
@@ -307,6 +348,13 @@ export class RoomGuard {
   async ensureJoined() {
     if (this.live()) return this.live();
     if (Date.now() < this.nextJoin) return null;
+    // Never join on a page the site has moved past: it would sit in a room fresh pages cannot reach.
+    const site = this.ctx.site;
+    if (site && site.stale()) {
+      const from = site.pageVersion(), to = site.latest();
+      await site.refresh('a guard joins the room again').catch((e) => this.note('guard.site_reload', { ok: false, error: String((e && e.message) || e).slice(0, 200) }));
+      if (!this.siteMove) this.siteMove = { from, to, at: Date.now(), why: 'joining' };
+    }
     try {
       // guard: true says this join needs room ops (guard.state and the rest); GIFOS_BOT_MODE=auto's SwitchBotDriver
       // reads it to probe the core for them before trusting a core seat, and uses the browser bot when they are gone.
@@ -354,7 +402,19 @@ export class RoomGuard {
         if (snap) { stageNow = stageView(st, snap, this.botName()); this.mem.names = stageNow.people.map((q) => q.name); st.stage = { me_on: stageNow.me_on }; }
         else st.stage = { me_on: false };
       }
+      // A new live release on the site: reload now if it is this seat's turn (siteTurn), else keep the room meanwhile.
+      const site = this.ctx.site;
+      if (site && site.stale()) {
+        const to = site.latest();
+        const turn = siteTurn(st, this.policy, this.mem, Date.now(), to);
+        if (turn.go) { await this.siteReload(m, to, turn.why); return; }
+        if (!this.siteWaitNoted || this.siteWaitNoted !== to + turn.why) { this.siteWaitNoted = to + turn.why; this.note('guard.site_wait', { to, why: turn.why }); }
+      }
       const p = plan(st, this.policy, this.mem, Date.now());
+      if (this.siteMove && (p.role === 'lead' || p.role === 'coadmin')) {
+        this.note('guard.site_back', { from: this.siteMove.from, to: this.siteMove.to, role: p.role, ms: Date.now() - this.siteMove.at, page: site ? site.pageVersion() : null });
+        this.siteMove = null;
+      }
       this.last = { at: new Date().toISOString(), role: p.role, participants: st && st.participants, capture: st && st.capture, password_set: st && st.password_set,
         password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all, clear: (st && st.clear) || null,
         // For a sibling's updater (gifos-meet-mcp scripts/self-update.sh): restart only while a sibling holds the room.
@@ -386,6 +446,19 @@ export class RoomGuard {
     if (!d.thanks) return;
     try { await this.greet(d.thanks); this.note('guard.stage_thanks', { spoken: !!this.policy.voice }); }
     catch (e) { this.note('guard.stage_thanks', { ok: false, text: String((e && e.message) || e).slice(0, 160) }); }
+  }
+  // The site moved to release `to`: leave the room, close the bot's page (src/site.js refresh), and join again at the
+  // next tick on a fresh page of the live release; plan() takes the room back from 'waiting' like any new seat.
+  async siteReload(m, to, why) {
+    const site = this.ctx.site;
+    const from = site.pageVersion();
+    this.note('guard.site_reload', { from, to, why });
+    this.siteMove = { from, to, at: Date.now(), why };
+    try { await this.ctx.depart(m, 'guard'); }
+    catch (e) { this.note('guard.action', { op: 'guard.site_reload', why: 'leave', ok: false, error: String((e && e.message) || e).slice(0, 200) }); }
+    await site.refresh(why).catch((e) => this.note('guard.action', { op: 'guard.site_reload', why: 'reload', ok: false, error: String((e && e.message) || e).slice(0, 200) }));
+    this.meetingId = null; this.nextJoin = 0;
+    this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake });
   }
   // Leave the room and join it again at the next tick: a page start, the one way a GifOS page takes back a pass that
   // moved to another meeting. The new seat loads the credentials and proves its key again (plan() from 'waiting').
@@ -437,7 +510,11 @@ export class RoomGuard {
     const off = this.ctx.transcript.onLine(fn);
     this.unhook = typeof off === 'function' ? off : null;
   }
-  status() { return { meeting_id: this.meetingId, link: this.policy.link, mode: this.policy.mode, rank: this.policy.rank, password: this.policy.password ? 'held' : 'none', ...(this.last || { role: this.mem.role }) }; }
+  status() {
+    const site = this.ctx.site;
+    const page = site ? { page: site.pageVersion() || null, live: site.latest() || null, moving: this.siteMove ? { to: this.siteMove.to, since: new Date(this.siteMove.at).toISOString() } : null } : {};
+    return { meeting_id: this.meetingId, link: this.policy.link, mode: this.policy.mode, rank: this.policy.rank, password: this.policy.password ? 'held' : 'none', ...(this.last || { role: this.mem.role }), site: page };
+  }
 }
 
 // GIFOS_GUARD_CONFIG: { "guards": [ policy, ... ] } (paths relative to the file). Started when the server starts.

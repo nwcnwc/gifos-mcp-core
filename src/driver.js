@@ -12,6 +12,7 @@ import { chromium } from 'playwright';
 import { launchInstalled } from './browser.js';
 import { botPicture } from './profile.js';
 import { log } from './log.js';
+import { siteVersion } from '@gifos-app/agent/site';
 import { VOICE_GAP, INTERJECT_GAP, HAND_GAP, MIC_GAP, CAMERA_GAP, CONTROLS_GAP, SNAPSHOT_GAP } from './voice/settings.js';
 import { bridgeScript, hostRoles, HOST_BINDING, installPlan } from './voice/providers.js';
 import { packHostResult, serveHost } from './voice/host.js';
@@ -513,7 +514,9 @@ export class MeetingBotDriver {
     let audio = this.cfg.botAudio;
     if (!audio) { audio = path.join(this.cfg.home, 'silence.wav'); if (!fs.existsSync(audio)) silenceWav(audio); }
 
-    log('starting the bot browser for ' + this.cfg.gifosUrl);
+    const live = await siteVersion(this.cfg.gifosUrl).catch(() => null);
+    this.startedOn = (live && live.latest) || '';
+    log('starting the bot browser for ' + this.cfg.gifosUrl + (this.startedOn ? ' (live release ' + this.startedOn + ')' : ''));
     const ctx = await this.launch(this.cfg.profile || 'profile-bot', audio);
     this.bot = { ctx };
     // Listeners of an older browser start (closed by close(), which moves gen on) say nothing.
@@ -872,6 +875,23 @@ export class MeetingBotDriver {
       }
     }
     return out;
+  }
+
+  // The release the Meeting Bot page runs: on a site with release snapshots the loader moved it to /versions/<v>/;
+  // elsewhere (a local or edge site), the live release read when the browser started. '' before a start.
+  pageVersion() {
+    const app = this.bot && this.bot.app;
+    if (!app || app.isClosed()) return '';
+    const m = /\/versions\/(\d+(?:\.\d+){1,3})\//.exec(app.url());
+    return m ? m[1] : (this.startedOn || '');
+  }
+
+  // A new live release on the site (src/site.js): drop this browser; the next call starts a fresh one, which loads
+  // the live release. Its meetings are lost the usual way (onLost: back to scheduled, the clock seats them again).
+  async refresh(why) {
+    if (this.starting) await this.starting.catch(() => {});
+    if (this.state === 'ready') this.lose(why || 'the site moved to a new release');
+    if (this.bot) await this.close();
   }
 
   async close() {

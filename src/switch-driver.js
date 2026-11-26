@@ -138,6 +138,11 @@ export class SwitchBotDriver {
     return out;
   }
 
+  // The site's live release (src/site.js): the browser page's, once a browser runs. A core seat loads the site's
+  // signed core at each join, so a guard that leaves and joins again (src/guard.js) moves it to the new release.
+  pageVersion() { return this._browser && typeof this._browser.pageVersion === 'function' ? this._browser.pageVersion() : ''; }
+  async refresh(why) { if (this._browser && typeof this._browser.refresh === 'function') await this._browser.refresh(why); }
+
   async close() {
     await this.core.close();
     if (this._browser) await this._browser.close();

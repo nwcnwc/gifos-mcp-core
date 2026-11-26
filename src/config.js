@@ -72,6 +72,8 @@ export function loadConfig(env = process.env) {
     // process and Chromium. Rooms per worker defaults to an even share of the cap.
     workers: positiveInt(env.GIFOS_WORKERS, 1, 'GIFOS_WORKERS'),
     workerRooms: workerRooms(env),
+    // How often the bot reads the site's version.json to learn of a new live release (src/site.js); 0 never.
+    siteCheckMs: String(env.GIFOS_SITE_CHECK_MS ?? '').trim() === '0' ? 0 : positiveInt(env.GIFOS_SITE_CHECK_MS, 60000, 'GIFOS_SITE_CHECK_MS'),
     voice: voiceConfig(env),
   };
 }

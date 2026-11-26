@@ -539,6 +539,17 @@ export class WorkerPool {
     return () => { this.lostHooks = this.lostHooks.filter((f) => f !== fn); };
   }
 
+  // A new live release on the site (src/site.js): every worker's process ends, and its meetings are lost the usual
+  // way (back to scheduled); the next join starts a fresh worker, whose browser loads the live release.
+  async refresh(why) {
+    for (const w of this.workers) {
+      if (!w.child) continue;
+      const gone = [...w.rooms].map((s) => 'w' + w.index + ':' + s);
+      await w.close();
+      if (gone.length) this.lostFrom(w.index, gone, why || 'the site moved to a new release');
+    }
+  }
+
   setThinking(id, on) {
     if (!id) return;
     const prev = this.thinking.has(id);
