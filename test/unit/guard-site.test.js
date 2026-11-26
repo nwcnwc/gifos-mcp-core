@@ -54,8 +54,8 @@ test('siteTurn: a sibling that never moves (an older bot) holds rank 1 back at m
   const mem = newMemory();
   const pol = { rank: 1 };
   siteTurn(held([sib('s1')]), pol, mem, T + 0, 'v2');
-  assert.equal(siteTurn(held([sib('s1')]), pol, mem, T + 299000, 'v2').go, false);
-  assert.equal(siteTurn(held([sib('s1')]), pol, mem, T + 300000, 'v2').go, true);
+  assert.equal(siteTurn(held([sib('s1')]), pol, mem, T + 119000, 'v2').go, false);
+  assert.equal(siteTurn(held([sib('s1')]), pol, mem, T + 120000, 'v2').go, true);
 });
 
 function fakeCtx(site) {

@@ -78,7 +78,10 @@ const NOBLUR_EVERY_MS = 60000;   // one No blur pick a minute at most (a pick tu
 const NOBLUR_TRIES = 3;          // picks that did not clear this seat's picture before the guard says so and waits
 const NOBLUR_BACKOFF_MS = 600000;
 const SITE_SIBLING_GONE_MS = 60000;   // a site move: a sibling's seat gone this long moved on (or died): go too
-const SITE_WAIT_MAX_MS = 240000;      // a site move: rank N > 0 waits at most this (+60 s per rank) for its sibling
+// A site move: rank N > 0 waits at most this (+60 s per rank above 1) for its sibling. A sibling's seat id is its key,
+// so a quick reload can look like no move at all from the old room (seen locally: the old room kept showing it); a
+// reload takes ~25 s and siblings notice the move up to one check (60 s) apart.
+const SITE_WAIT_MAX_MS = 120000;
 const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
 
 // The default welcome: neutral; it adds the clear-video note only when the guard blurs everyone.
@@ -249,7 +252,7 @@ export function siteTurn(state, policy, mem, now, to) {
     const since = now - (mem.siblingSeenAt || 0);
     if (!mem.siblingSeenAt || since >= SITE_SIBLING_GONE_MS) return { go: true, why: mem.siblingSeenAt ? 'no sibling beside this seat for ' + Math.round(since / 1000) + ' s' : 'no sibling beside this seat' };
   }
-  if (now - s.at >= SITE_WAIT_MAX_MS + policy.rank * 60000) return { go: true, why: 'waited ' + Math.round((now - s.at) / 1000) + ' s for a sibling to move first' };
+  if (now - s.at >= SITE_WAIT_MAX_MS + Math.max(0, policy.rank - 1) * 60000) return { go: true, why: 'waited ' + Math.round((now - s.at) / 1000) + ' s for a sibling to move first' };
   return { go: false, why: here.size ? 'a sibling of lower rank moves first' : 'a sibling seen moments ago is away (moving now)' };
 }
 
