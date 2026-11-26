@@ -148,7 +148,7 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         const pass = doc.getElementById('adm-pass');
         const go = doc.getElementById('adm-enable');
         if (!btn || !pass || !go) return { ok: false, error: oldSite };
-        if (btn.style.display === 'none') return { ok: false, error: 'No one has taken over as host in this public open-floor meeting, so there is nothing to sign in to.' };
+        if (btn.style.display === 'none') return { ok: false, error: 'No one has taken over as host in this public majority-rules meeting (open meeting), so there is nothing to sign in to.' };
         btn.click();
         pass.value = String(a.password || '');
         go.click();

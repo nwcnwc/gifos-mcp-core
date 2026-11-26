@@ -15,9 +15,9 @@ import { loadConfig } from '../../src/config.js';
 import { MeetingStore } from '../../src/meetings.js';
 import { tmpHome } from './fixtures/tmp-home.js';
 
-const PUB = '(?:public|open[- ]floor)', PRIV = '(?:private|hosted)', GAP = '[\\s,;:/()–—-]*(?:and|or|&)?[\\s,;:/()–—-]*';
+const PUB = '(?:public|open[- ]floor|majority[- ]rules)', PRIV = '(?:private|hosted)', GAP = '[\\s,;:/()–—-]*(?:and|or|&)?[\\s,;:/()–—-]*';
 export const MIX = new RegExp('\\b' + PUB + GAP + PRIV + '\\b|\\b' + PRIV + GAP + PUB + '\\b', 'i');
-const OLD = [/\bopen rooms?\b/i, /\bopen-room\b/i, /\badmin rooms?\b/i, /\ba room with a host\b/i];
+const OLD = [/\bopen[- ]floor\b/i, /\bopen rooms?\b/i, /\bopen-room\b/i, /\badmin rooms?\b/i, /\ba room with a host\b/i];
 
 async function tools() {
   const home = tmpHome('gifos-mcp-core-kind-');
@@ -40,25 +40,25 @@ const textsOf = (list) => list.flatMap((t) => [[t.name, (t.title || '') + ' ' + 
 test('guard_room names both kinds the way the screens do, and mode keeps the values open and admin', async () => {
   const g = (await tools()).find((t) => t.name === 'guard_room');
   const all = g.description + ' ' + g.inputSchema.properties.mode.description;
-  assert.match(all, /public open-floor meeting/, 'names the open kind');
+  assert.match(all, /public majority-rules meeting \(open meeting\)/, 'names the open kind (first mention: majority-rules meeting (open meeting))');
   assert.match(all, /private meeting/, 'names the admin kind');
-  assert.match(g.inputSchema.properties.mode.description, /open[^.]*public open-floor meeting/);
+  assert.match(g.inputSchema.properties.mode.description, /open[^.]*public majority-rules meeting/);
   assert.match(g.inputSchema.properties.mode.description, /admin[^.]*private meeting/);
   assert.deepEqual(g.inputSchema.properties.mode.enum, ['open', 'admin'], 'the API values are unchanged');
 });
 
-test('no tool text uses an old room name or puts a public/open-floor word beside a private/hosted word', async () => {
+test('no tool text uses an old room name (open-floor is retired: majority-rules meeting) or puts a public word beside a private/hosted word', async () => {
   for (const [where, text] of textsOf(await tools())) {
     for (const re of OLD) assert.equal(re.test(text), false, where + ' says ' + re + ': ' + text);
     assert.equal(MIX.test(text), false, where + ' mixes the two kinds: ' + text);
   }
   assert.ok(['a public hosted meeting', 'private open-floor', 'public or private meetings'].every((s) => MIX.test(s)));
-  assert.ok(['a private, hosted meeting', 'a public open-floor meeting'].every((s) => !MIX.test(s)));
+  assert.ok(['a private, hosted meeting', 'a public majority-rules meeting'].every((s) => !MIX.test(s)));
 });
 
 test('the kind field takes the screen words and the old ones as synonyms, and refuses a mixed phrase', async () => {
   const { roomKind, kindField } = await import('../../src/kind.js');
-  for (const w of ['open', 'public', 'Public', 'open floor', 'open-floor', 'Open floor', 'a public open-floor meeting', 'Start a public open-floor meeting', 'open room', 'public meeting']) assert.equal(roomKind(w), 'open', w);
+  for (const w of ['open', 'public', 'Public', 'open floor', 'open-floor', 'Open floor', 'a public open-floor meeting', 'Start a public open-floor meeting', 'open room', 'public meeting', 'majority rules', 'majority-rules', 'a public majority-rules meeting', 'Majority-rules meeting']) assert.equal(roomKind(w), 'open', w);
   for (const w of ['admin', 'private', 'Private', 'hosted', 'private meeting', 'a private, hosted meeting', 'Host a private meeting', 'hosted meeting', 'admin room', 'private hosted meeting']) assert.equal(roomKind(w), 'admin', w);
   const s = z.object({ mode: kindField('kind') });
   assert.equal(s.parse({ mode: 'private' }).mode, 'admin');

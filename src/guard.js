@@ -91,7 +91,7 @@ export function normalizePolicy(p, base) {
     name: typeof p.name === 'string' ? p.name.trim().slice(0, 40) : '',
     ...stage,
   };
-  if (mode === 'open' && !out.credentials) throw new Error('A public open-floor meeting (mode open) is held by capture: set credentials to a subscription file on a $5+ plan.');
+  if (mode === 'open' && !out.credentials) throw new Error('A public majority-rules meeting (open meeting) (mode open) is held by capture: set credentials to a subscription file on a $5+ plan.');
   if (mode === 'admin' && !out.host_password) throw new Error('A private meeting (mode admin) needs host_password.');
   return out;
 }
@@ -161,7 +161,7 @@ export function plan(state, policy, mem, now) {
     } else if (cap.can_take && now - mem.lastCapture > CAPTURE_EVERY_MS) { mem.lastCapture = now; act('guard.capture', {}, 'take charge of the meeting ("Make me host")'); }
     else if (!sub.held && sub.moved === 'moved' && viaPass) retake(PASS_MOVED);
     else if (!sub.held && sub.moved && !viaPass && now - mem.lastReload > RELOAD_EVERY_MS) { mem.lastReload = now; act('guard.credentials', {}, 'the subscription\'s ticket is ' + sub.moved + ': join this meeting with it again'); }
-    fixPassword('a public open-floor meeting nobody holds had its password changed; anyone inside may set it');
+    fixPassword('a public majority-rules meeting nobody holds had its password changed; anyone inside may set it');
     return out;
   }
   mem.capOffSince = 0;
