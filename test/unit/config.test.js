@@ -86,8 +86,8 @@ test('rooms and links', () => {
   const seen = new Set();
   for (let i = 0; i < 200; i++) { const r = newRoom(); assert.match(r, /^[0-9a-z]{24}$/); seen.add(r); }
   assert.equal(seen.size, 200);
-  assert.equal(linkFor('https://gifos.app', 'abc'), 'https://gifos.app/run.html#v=abc');
-  assert.equal(roomFromLink('https://gifos.app/run.html#v=abc-1&relay=x'), 'abc-1');
+  assert.equal(linkFor('https://gifos.app', 'abc'), 'https://gifos.app/run.html#room=abc');
+  assert.equal(roomFromLink('https://gifos.app/run.html#room=abc-1&relay=x'), 'abc-1');
   assert.equal(roomFromLink('https://gifos.app/meet/Room42'), 'Room42');
   assert.equal(roomFromLink('https://gifos.app/meet/Room42/'), 'Room42');
   assert.equal(roomFromLink('https://gifos.app/meet/Room42/3783bb03122c41d92d295bab'), 'Room42');
@@ -96,16 +96,17 @@ test('rooms and links', () => {
   assert.equal(roomFromLink('https://gifos.app/meet#room=Room42'), 'Room42');
   assert.equal(roomFromLink('https://gifos.app/meet#room=Room42&v=3783bb03122c41d92d295bab'), 'Room42');
   assert.equal(roomFromLink('https://gifos.app/cast#room=Room42&v=3783bb03122c41d92d295bab&at=1'), 'Room42');
-  assert.equal(roomFromLink('https://gifos.app/run.html#v=Room42&av=3783bb03122c41d92d295bab&bc=1'), 'Room42');
+  assert.equal(roomFromLink('https://gifos.app/run.html#room=Room42&v=3783bb03122c41d92d295bab&cast=1'), 'Room42');
+  assert.equal(roomFromLink('https://gifos.app/run.html#v=Room42&av=3783bb03122c41d92d295bab&bc=1'), '', 'the old page-entry form names no room');
   assert.equal(roomFromLink('https://gifos.app/index.html'), '');
   assert.equal(roomFromLink('javascript:alert(1)#v=abc'), '');
-  assert.equal(roomFromLink('https://gifos.app/run.html#v=bad%20room'), '');
+  assert.equal(roomFromLink('https://gifos.app/run.html#room=bad%20room'), '');
 });
 
 test('a restart puts live meetings back to scheduled', () => {
   const home = tmp();
   const s = new MeetingStore(home);
-  const m = s.add({ topic: 'Demo meeting', room: 'r1', link: 'https://gifos.app/run.html#v=r1' });
+  const m = s.add({ topic: 'Demo meeting', room: 'r1', link: 'https://gifos.app/run.html#room=r1' });
   s.update(m.meeting_id, { state: 'live', session_id: 'mt_1', transcribing: true });
   const again = new MeetingStore(home);
   assert.equal(again.resetLive(), 1);

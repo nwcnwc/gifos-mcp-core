@@ -27,14 +27,16 @@ test('links carry the room, the verifier and the options, never a password', asy
   const m = meetingLink('https://gifos.app/', room, { verifier: k.verifier, relay: 'wss://relay.example.test' });
   assert.match(m, /\/run\.html#/);
   assert.equal(roomFromLink(m), room);
-  assert.equal(linkParams(m).get('av'), k.verifier);
+  assert.equal(linkParams(m).get('room'), room);
+  assert.equal(linkParams(m).get('v'), k.verifier);
+  assert.equal(linkParams(m).get('av'), null);
   assert.equal(linkParams(m).get('relay'), 'wss://relay.example.test');
   assert.equal(m.includes('admin-pass-1'), false);
   assert.equal(m.includes(k.seedHex), false);
   // GifOS 0.9.26 has no town hall: an old townHall option changes nothing.
   assert.equal(meetingLink('https://gifos.app', room, { verifier: k.verifier, townHall: true }), admin);
   assert.equal(linkParams(meetingLink('https://gifos.app', room)).get('room'), room);
-  assert.equal(linkParams(meetingLink('https://gifos.app', room)).get('av'), null);
+  assert.equal(linkParams(meetingLink('https://gifos.app', room)).get('v'), null);
   const at = Date.parse('2026-10-25T15:00:00Z');
   const b = broadcastLink('https://gifos.app', room, { verifier: k.verifier, startAt: at, visit: 'https://example.org/give', stream: true });
   assert.equal(b, 'https://gifos.app/cast#room=' + room + '&v=' + k.verifier + '&at=' + (at / 1000));
@@ -42,7 +44,7 @@ test('links carry the room, the verifier and the options, never a password', asy
   assert.equal(p.get('room'), room);
   assert.equal(p.get('v'), k.verifier);
   assert.equal(p.get('at'), String(at / 1000));
-  assert.equal(p.get('bc'), null);
+  assert.equal(p.get('cast'), null);
   assert.equal(p.get('st'), null, 'no Stream to friends in 0.9.26');
   assert.equal(p.get('visit'), null, 'no Visit link in 0.9.26');
   assert.equal(isBroadcastLink(b), true);
@@ -55,16 +57,18 @@ test('links carry the room, the verifier and the options, never a password', asy
   assert.equal(isBroadcastLink(admin), false);
   assert.equal(isBroadcastLink('https://gifos.app/cast/' + room), false);
   assert.throws(() => broadcastLink('https://gifos.app', room, {}), /host key/);
-  // A custom relay keeps the page hash, including bc on a broadcast.
+  // A custom relay keeps the page hash, including cast=1 on a broadcast.
   const relayCast = broadcastLink('https://gifos.app', room, { verifier: k.verifier, relay: 'wss://relay.example.test', startAt: at });
   assert.match(relayCast, /\/run\.html#/);
-  assert.equal(linkParams(relayCast).get('bc'), '1');
-  assert.equal(linkParams(relayCast).get('v'), room);
-  assert.equal(linkParams(relayCast).get('av'), k.verifier);
+  assert.equal(linkParams(relayCast).get('cast'), '1');
+  assert.equal(linkParams(relayCast).get('room'), room);
+  assert.equal(linkParams(relayCast).get('v'), k.verifier);
+  assert.equal(linkParams(relayCast).get('av'), null);
+  assert.equal(linkParams(relayCast).get('bc'), null);
   assert.equal(roomFromLink(relayCast), room);
 });
 
-test('every link builder emits the fragment form', () => {
+test('every link builder emits the one grammar', () => {
   const room = 'abc123';
   const v = 'a'.repeat(24);
   const at = Date.parse('2026-10-25T15:00:00Z');
@@ -73,12 +77,18 @@ test('every link builder emits the fragment form', () => {
     [meetingLink('https://gifos.app/', room, { verifier: v }), '/meet'],
     [broadcastLink('https://gifos.app', room, { verifier: v }), '/cast'],
     [broadcastLink('https://gifos.app', room, { verifier: v, startAt: at }), '/cast'],
+    [meetingLink('https://gifos.app', room, { relay: 'ws://127.0.0.1:1' }), '/run.html'],
+    [meetingLink('https://gifos.app', room, { verifier: v, relay: 'ws://127.0.0.1:1' }), '/run.html'],
+    [broadcastLink('https://gifos.app', room, { verifier: v, relay: 'ws://127.0.0.1:1', startAt: at }), '/run.html'],
   ];
   for (const [url, path] of built) {
     const u = new URL(url);
     assert.equal(u.pathname, path);
     assert.equal(u.pathname.includes(room), false);
-    assert.equal(new URLSearchParams(u.hash.replace(/^#/, '')).get('room'), room);
+    const h = new URLSearchParams(u.hash.replace(/^#/, ''));
+    assert.equal(h.get('room'), room);
+    for (const old of ['av', 'bc', 's', 'j', 'k']) assert.equal(h.has(old), false, old);
+    if (h.has('v')) assert.equal(h.get('v'), v);
   }
 });
 
@@ -94,7 +104,9 @@ test('old path forms and the fragment form both name the room', () => {
     ['https://gifos.app/meet#room=' + R, R, '', false],
     ['https://gifos.app/meet#room=' + R + '&v=' + V, R, V, false],
     ['https://gifos.app/cast#room=' + R + '&v=' + V + '&at=1', R, V, true],
-    ['https://gifos.app/run.html#v=' + R + '&av=' + V + '&bc=1', R, V, true],
+    ['https://gifos.app/run.html#room=' + R + '&v=' + V + '&cast=1', R, V, true],
+    ['https://gifos.app/run.html#room=' + R + '&v=' + V, R, V, false],
+    ['https://gifos.app/versions/0.9.28/cast.html#room=' + R + '&v=' + V, R, V, true],
   ];
   for (const [link, room, ver, cast] of rows) {
     assert.equal(roomFromLink(link), room, link);
@@ -102,6 +114,11 @@ test('old path forms and the fragment form both name the room', () => {
     assert.equal(isBroadcastLink(link), cast, link);
   }
   assert.equal(isBroadcastLink('https://gifos.app/cast/' + R), false);
+  // The old page-entry form and a v= without room= name no room.
+  for (const old of ['https://gifos.app/run.html#v=' + R + '&av=' + V + '&bc=1', 'https://gifos.app/run.html#v=' + V, 'https://gifos.app/meet#v=' + V]) {
+    assert.equal(roomFromLink(old), '', old);
+    assert.equal(isBroadcastLink(old), false, old);
+  }
 });
 
 test('a Visit link must be https', () => {

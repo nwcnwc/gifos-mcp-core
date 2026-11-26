@@ -18,7 +18,7 @@ function stripSecrets(fields) {
 }
 
 export function linkFor(gifosUrl, room, relay) {
-  return gifosUrl + '/run.html#v=' + room + (relay ? '&relay=' + encodeURIComponent(relay) : '');
+  return gifosUrl + '/run.html#room=' + room + (relay ? '&relay=' + encodeURIComponent(relay) : '');
 }
 
 export class MeetingStore {

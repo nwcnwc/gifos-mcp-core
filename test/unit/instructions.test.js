@@ -16,7 +16,7 @@ import { loadConfig } from '../../src/config.js';
 import { MeetingStore, publicView } from '../../src/meetings.js';
 import { tmpHome } from './fixtures/tmp-home.js';
 
-const LINK = 'http://127.0.0.1:19510/run.html#v=checkin1';
+const LINK = 'http://127.0.0.1:19510/run.html#room=checkin1';
 const PW = 'amber-gate-77';
 const GOAL = 'Daily check-in for the owner.\nAsk: 1) What did you finish yesterday? 2) What is next today? 3) Anything blocking you?\nUp to two follow-ups each. 15 minutes.';
 const DAY = 24 * 60 * 60 * 1000;

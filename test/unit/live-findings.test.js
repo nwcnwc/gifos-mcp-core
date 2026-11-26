@@ -31,14 +31,14 @@ test('a plain room is /meet#room=<room>; an admin room adds &v=<verifier>; relay
   assert.equal(roomFromLink('https://gifos.app/meet/abc123/' + av + '/'), 'abc123');
   // GifOS 0.9.26 has no town hall: the option is gone and changes nothing.
   assert.equal(meetingLink('https://gifos.app', 'abc123', { townHall: true }), 'https://gifos.app/meet#room=abc123');
-  assert.match(meetingLink('https://gifos.app', 'abc123', { relay: 'wss://r.example' }), /\/run\.html#v=abc123&relay=/);
-  assert.match(meetingLink('https://gifos.app', 'abc123', { verifier: av, relay: 'wss://r.example' }), /\/run\.html#v=abc123&av=f{24}&relay=/);
+  assert.match(meetingLink('https://gifos.app', 'abc123', { relay: 'wss://r.example' }), /\/run\.html#room=abc123&relay=/);
+  assert.match(meetingLink('https://gifos.app', 'abc123', { verifier: av, relay: 'wss://r.example' }), /\/run\.html#room=abc123&v=f{24}&relay=/);
 });
 
 test('the bot joins only GifOS: GIFOS_URL, gifos.app, or this computer', () => {
   assert.equal(gifosHostAllowed('https://gifos.app/meet#room=abc', 'https://gifos.app'), true);
   assert.equal(gifosHostAllowed('https://beta.gifos.app/meet#room=abc', 'https://gifos.app'), true);
-  assert.equal(gifosHostAllowed('http://127.0.0.1:19510/run.html#v=abc', 'https://gifos.app'), true);
+  assert.equal(gifosHostAllowed('http://127.0.0.1:19510/run.html#room=abc', 'https://gifos.app'), true);
   assert.equal(gifosHostAllowed('https://meet.example.org/meet/abc', 'https://meet.example.org'), true);
   assert.equal(gifosHostAllowed('https://evil.example.com/meet/abc', 'https://gifos.app'), false);
   assert.equal(gifosHostAllowed('https://gifos.app.evil.example.com/meet/abc', 'https://gifos.app'), false);

@@ -63,7 +63,7 @@ test('the shared tools are there, and there is no voice-model switch', async () 
 });
 
 test('a join hands Meet Bot both switches off: it says only what say gives it', async () => {
-  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room1' }));
+  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#room=room1' }));
   assert.equal(m.state, 'live');
   assert.deepEqual(bot.voice, { respond_to_command: false, speak: false });
   const st = json(await call('status'));
@@ -75,7 +75,7 @@ test('a join hands Meet Bot both switches off: it says only what say gives it', 
 });
 
 test('say speaks the line, with a voice for that line when asked', async () => {
-  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room2' }));
+  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#room=room2' }));
   json(await call('say', { meeting_id: m.meeting_id, text: 'Hello all.' }));
   json(await call('say', { meeting_id: m.meeting_id, text: 'And again.', voice: 'am_michael' }));
   const said = bot.calls.filter((c) => c[0] === 'interject');
@@ -85,7 +85,7 @@ test('say speaks the line, with a voice for that line when asked', async () => {
 });
 
 test('wait_lines returns as soon as a line lands, and marks lines addressed to the bot', async () => {
-  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room3' }));
+  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#room=room3' }));
   const t0 = Date.now();
   const pending = call('wait_lines', { meeting_id: m.meeting_id, since: 0, timeout_ms: 10000 });
   setTimeout(() => ctx.transcript.append({ meeting_id: m.meeting_id, speaker: 'Ada', text: 'Hey bot, what is next?', kind: 'speech' }), 150);
@@ -118,7 +118,7 @@ test('set_bot_profile: the operator names the bot and gives it a picture; the na
   const bad = await call('set_bot_profile', { picture_path: svg });
   assert.equal(bad.isError, true);
   assert.match(bad.content[0].text, /GIF, PNG, JPEG or WebP/);
-  json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room9' }));
+  json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#room=room9' }));
   const busy = await call('set_bot_profile', { name: 'Other name' });
   assert.equal(busy.isError, true);
   assert.match(busy.content[0].text, /in a room/);
@@ -134,7 +134,7 @@ test('set_bot_profile: the operator names the bot and gives it a picture; the na
 });
 
 test('snapshot returns the PNG as image content when the file is there', async () => {
-  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room4' }));
+  const m = json(await call('test_join', { link: 'http://127.0.0.1:19510/run.html#room=room4' }));
   const png = path.join(home, 'shot.png');
   fs.writeFileSync(png, tinyPng());
   bot.snapshot = async () => ({ applied: true, png, result: { ok: true } });
@@ -158,12 +158,12 @@ test('GIFOS_CREDENTIALS: the file is read once and handed only to the bot\'s bro
   const c = createContext({ cfg, meetings: new MeetingStore(h), bot: b, botName: 'notes-test', botPassword: 'quiet-cedar-42' });
   fs.unlinkSync(file);   // read once at start: the file is not needed again
   assert.equal(c.credentials.has(), true);
-  await c.joinByLink('http://127.0.0.1:19510/run.html#v=room1', '', 'Test');
+  await c.joinByLink('http://127.0.0.1:19510/run.html#room=room1', '', 'Test');
   const loads = b.calls.filter((x) => x[0] === 'room' && x[2] === 'guard.credentials');
   assert.equal(loads.length, 1);
   assert.equal(Buffer.from(loads[0][3], 'base64').toString(), 'GIF89a-secret-credential-bytes');
   c.credentials.guardRoom('room2');
-  await c.joinByLink('http://127.0.0.1:19510/run.html#v=room2', '', 'Test');
+  await c.joinByLink('http://127.0.0.1:19510/run.html#room=room2', '', 'Test');
   assert.equal(b.calls.filter((x) => x[0] === 'room').length, 1, 'the guard loads its own file in its own room');
   const evs = fs.existsSync(path.join(h, 'events.jsonl')) ? fs.readFileSync(path.join(h, 'events.jsonl'), 'utf8') : '';
   assert.equal(evs.includes(Buffer.from('GIF89a-secret-credential-bytes').toString('base64')), false);
@@ -174,7 +174,7 @@ test('use_credentials: takes a path or base64, refuses a non-GIF, never returns 
   assert.equal(r0.isError, true);
   const f = path.join(home, 'c.gif'); fs.writeFileSync(f, Buffer.from('GIF89a-user-pass-bytes'));
   bot.room = async () => ({ loaded: true });
-  await call('test_join', { link: 'http://127.0.0.1:19510/run.html#v=room1' });
+  await call('test_join', { link: 'http://127.0.0.1:19510/run.html#room=room1' });
   const r = await call('use_credentials', { path: f });
   const v = json(r);
   assert.equal(v.loaded_in, 1);
@@ -190,7 +190,7 @@ test('a product\'s instructions reach the client at initialize', async () => {
 });
 
 test('guard_room mode admin: needs host_password, unless the product keeps the room\'s (ctx.hostPasswordFor)', async () => {
-  const link = 'http://127.0.0.1:19510/run.html#v=room9';
+  const link = 'http://127.0.0.1:19510/run.html#room=room9';
   const none = await call('guard_room', { link, mode: 'admin' });
   assert.equal(none.isError, true); assert.match(none.content[0].text, /host_password/);
   ctx.hostPasswordFor = (room) => (room === 'room9' ? 'kept-host-pw-9' : '');

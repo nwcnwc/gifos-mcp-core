@@ -10,7 +10,7 @@ import { serveHost } from '../../src/voice/host.js';
 import { tmpHome } from './fixtures/tmp-home.js';
 
 const ROOM = 'guest-ticket-9';
-const LINK = 'https://gifos.app/run.html#v=room123';
+const LINK = 'https://gifos.app/run.html#room=room123';
 const ADMIN = 'admin-must-not-land';
 
 function homeDir() {
@@ -92,7 +92,7 @@ test('an update with no occurrence changes the future series, and one occurrence
 test('over capacity is stored, not rejected', () => {
   const store = new ScheduleStore(homeDir());
   store.add(order());
-  store.add(order({ link: 'https://gifos.app/run.html#v=room456', start: '2026-01-05T17:30:00.000Z', end: '2026-01-05T18:30:00.000Z', topic: 'Review' }));
+  store.add(order({ link: 'https://gifos.app/run.html#room=room456', start: '2026-01-05T17:30:00.000Z', end: '2026-01-05T18:30:00.000Z', topic: 'Review' }));
   const picture = capacityAt(store.all(), Date.parse('2026-01-05T17:30:00.000Z'), 1);
   assert.equal(picture.over_by, 1);
   assert.equal(picture.waiting.length, 1);
@@ -399,7 +399,7 @@ test('an order moved to a new window after its room failed or it waited for capa
   const { order: failing } = store.add(order());
   meetings.add({ meeting_id: 'm_fail', room: 'room123', link: LINK, topic: 'Notes' });
   store.setPhase(failing.schedule_id, { meeting_id: 'm_fail' });
-  const { order: full } = store.add(order({ link: 'https://gifos.app/run.html#v=room789' }));
+  const { order: full } = store.add(order({ link: 'https://gifos.app/run.html#room=room789' }));
   meetings.add({ meeting_id: 'm_full', room: 'room789', link: LINK, topic: 'Full' });
   store.setPhase(full.schedule_id, { meeting_id: 'm_full' });
   let seats = 0; // live meetings that are not ours fill the cap

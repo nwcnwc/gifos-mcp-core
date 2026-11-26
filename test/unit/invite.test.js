@@ -13,7 +13,7 @@ function urlsContain(text, secret) {
 }
 
 test('an invite lists the room password beside a plain link', () => {
-  const link = 'https://gifos.app/run.html#v=demoroom123&password=' + ROOM + '&pw=' + ROOM;
+  const link = 'https://gifos.app/run.html#room=demoroom123&password=' + ROOM + '&pw=' + ROOM;
   const invite = formatInvite({ topic: 'Demo', link, roomPassword: ROOM, startTime: '17:00' });
   assert.equal(urlsContain(invite.email, ROOM), false);
   assert.equal(urlsContain(JSON.stringify(invite.calendar), ROOM), false);
@@ -29,7 +29,7 @@ test('an invite lists the room password beside a plain link', () => {
 });
 
 test('a link that is the password itself is refused', () => {
-  assert.throws(() => plainLink('https://gifos.app/run.html#v=' + ROOM, ROOM), /must not contain the room password/);
+  assert.throws(() => plainLink('https://gifos.app/run.html#room=' + ROOM, ROOM), /must not contain the room password/);
 });
 
 test('a local time is read in its time zone; an ISO time with an offset is as written', () => {
@@ -42,7 +42,7 @@ test('a local time is read in its time zone; an ISO time with an offset is as wr
 });
 
 test('a meeting invite has every detail an invite needs, as fields and as text', () => {
-  const link = 'https://gifos.app/run.html#v=demoroom123&av=3783bb03122c41d92d295bab';
+  const link = 'https://gifos.app/run.html#room=demoroom123&v=3783bb03122c41d92d295bab';
   const inv = meetingInvite({ title: 'Budget review', link, start: '2026-10-20T17:00', end: '2026-10-20T18:30', timezone: 'America/Los_Angeles', description: 'Q4 numbers.', roomPassword: ROOM, hostName: 'Ada' });
   assert.equal(inv.kind, 'meeting');
   assert.equal(inv.title, 'Budget review');
@@ -58,17 +58,17 @@ test('a meeting invite has every detail an invite needs, as fields and as text',
   assert.equal(urlsContain(inv.text, ROOM), false);
   assert.equal(inv.calendar.location, link);
   assert.equal(JSON.stringify(inv).includes('BEGIN:VCALENDAR'), false, 'no calendar file is made');
-  const open = meetingInvite({ title: 'Stand-up', link: 'https://gifos.app/run.html#v=abc', start: '2026-10-20T09:00Z' });
+  const open = meetingInvite({ title: 'Stand-up', link: 'https://gifos.app/run.html#room=abc', start: '2026-10-20T09:00Z' });
   assert.equal(open.admit.how, 'link');
   assert.equal(open.end.iso, '2026-10-20T10:00:00.000Z', 'an hour by default');
   assert.equal(open.timezone, 'UTC');
-  assert.equal(meetingInvite({ title: 'Later', link: 'https://gifos.app/run.html#v=abc' }).start, null);
-  assert.equal(meetingInvite({ link: 'https://gifos.app/run.html#v=abc', townHall: true }).kind, 'meeting', 'GifOS 0.9.26 has no town hall');
-  assert.throws(() => meetingInvite({ link: 'https://gifos.app/run.html#v=abc', start: '2026-10-20T10:00Z', end: '2026-10-20T09:00Z' }), /end must be after start/);
+  assert.equal(meetingInvite({ title: 'Later', link: 'https://gifos.app/run.html#room=abc' }).start, null);
+  assert.equal(meetingInvite({ link: 'https://gifos.app/run.html#room=abc', townHall: true }).kind, 'meeting', 'GifOS 0.9.26 has no town hall');
+  assert.throws(() => meetingInvite({ link: 'https://gifos.app/run.html#room=abc', start: '2026-10-20T10:00Z', end: '2026-10-20T09:00Z' }), /end must be after start/);
 });
 
 test('a broadcast invite says how to watch, when it starts, and the room password when there is one', () => {
-  const link = 'https://gifos.app/run.html#v=svc&av=3783bb03122c41d92d295bab&bc=1&at=1792540800';
+  const link = 'https://gifos.app/run.html#room=svc&v=3783bb03122c41d92d295bab&cast=1&at=1792540800';
   const inv = broadcastInvite({ title: 'Sunday service', link, start: '2026-10-25T10:00', timezone: 'America/Chicago', description: 'Live from the hall.' });
   assert.equal(inv.kind, 'broadcast');
   assert.equal(inv.watch_url, link);
