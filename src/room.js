@@ -14,7 +14,7 @@ export const ROOM_OPS = [
   'app.list', 'app.run', 'app.stop', 'app.state',
   'stage.get', 'stage.set', 'stage.grant',
   'host.signin', 'host.state',
-  'guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all',
+  'guard.state', 'guard.credentials', 'guard.capture', 'guard.password', 'guard.blur_all', 'guard.noblur',
 ];
 
 export const OLD_SITE = 'This GifOS site does not have that yet (it needs GifOS 0.9.26 or newer).';
@@ -206,6 +206,18 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
           rights,
           subs_on: !!(M && has(M.enabled) && M.enabled()),
           blur_all: ba ? { offered: vis(ba), on: ba.classList.contains('on') } : null,
+          // The room's clear right as this seat reads it (GifOS 0.9.28.34+), for guard.noblur: mode '' (none), 'stage' or
+          // 'all'; level is what this seat sends (blurLevelFor('me'): 0 is clear); order: a host's blur order is on this
+          // seat. null: an older page.
+          clear: (() => {
+            if (!has(g.clearStateForTest) || !has(g.blurClassOf) || !has(g.outboundKind)) return null;
+            try {
+              const cs = g.clearStateForTest() || {};
+              const me = d.me ? d.me.peer : null;
+              return { mode: String(cs.mode || ''), level: g.blurClassOf('me'), out: String(g.outboundKind() || ''), blur: has(g.myBlur) ? g.myBlur() : null,
+                cam_off: has(g.camOff) ? !!g.camOff() : null, order: !!(me && has(g.modOn) && g.modOn(me, 'blur')) };
+            } catch (e) { return null; }
+          })(),
           people: ids.map((pid) => {
             const row = { id: String(pid), name: (has(g.nameOf) ? g.nameOf(pid) : '') || '', admin: admins.has(String(pid)) };
             if (hands) row.hand = hands.has(String(pid)) ? hands.get(String(pid)) : null;
@@ -246,6 +258,35 @@ export async function roomPageOp({ id, op, args, oldSite, waitMs }) {
         if (!b || b.style.display === 'none') return { ok: false, error: 'The page does not offer Blur guests to the bot here (it is a host control in a private meeting).' };
         if (b.classList.contains('on') !== !!a.on) b.click();
         return { ok: true, v: { on: b.classList.contains('on') } };
+      }
+      // "No blur", picked the way a person picks it: the camera button's chooser (#cam, then #campick-none, which is the
+      // page's pickCamera(0): setPersonalBlur(0, asked)). In a room whose host's right lets viewers tap to unblur, only a
+      // No blur picked in the meeting AFTER that right came on counts (the page's 'repick' rule), so the guard picks it
+      // again when the right arrives. The chooser opens only while the camera is off, and its pick turns the camera on;
+      // the camera goes back to how it was (a bot without a camera shows its picture, which the pick clears too).
+      case 'guard.noblur': {
+        const doc = w.document;
+        const cam = doc.getElementById('cam'), none = doc.getElementById('campick-none');
+        if (!cam || !none || !has(g.camOff) || !has(g.myBlur)) return { ok: false, error: oldSite };
+        const lim = Math.min(waitMs || 8000, 8000);
+        const wasOff = !!g.camOff();
+        if (!wasOff) {
+          cam.click();   // camera on: the button turns it off (the chooser opens only for a camera that is off)
+          if (!(await until(() => g.camOff(), lim))) return { ok: false, error: why('The camera did not turn off for the No blur pick.') };
+          await sleep(300);
+        }
+        cam.click();
+        const open = () => (has(g.camChooserOpenForTest) ? !!g.camChooserOpenForTest() : true);
+        if (!(await until(open, Math.min(lim, 4000)))) return { ok: false, error: why('The camera chooser did not open.') };
+        none.click();
+        await until(() => g.myBlur() === 0, Math.min(lim, 4000));
+        // The page may explain a hold in its blur dialog; a person reads it and taps OK.
+        const bw = doc.getElementById('blurwhy-modal'), bok = doc.getElementById('blurwhy-ok');
+        if (bw && bok && bw.style.display !== 'none' && bw.style.display !== '') bok.click();
+        const on = await until(() => !g.camOff(), lim);
+        if (wasOff && on) { cam.click(); await until(() => g.camOff(), lim); }
+        return { ok: true, v: { picked: g.myBlur() === 0, camera: g.camOff() ? 'off' : 'on', out: has(g.outboundKind) ? String(g.outboundKind()) : null,
+          level: has(g.blurClassOf) ? g.blurClassOf('me') : null } };
       }
       default: return { ok: false, error: 'Unknown room op.' };
     }

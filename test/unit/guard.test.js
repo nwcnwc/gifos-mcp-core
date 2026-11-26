@@ -320,3 +320,89 @@ test('policy: voice (a Kokoro id) and picture (a path) are optional and checked'
   assert.equal(pol({ picture: 'a.png' }).picture, '/a.png');
   assert.equal(pol({ voice: 'not a voice; rm' }).voice, '', 'only a Kokoro-shaped id is kept');
 });
+
+// ---- no_blur: the host's own No blur pick after the room's clear right came on (GifOS 0.9.28.34 'repick') ----
+test('no_blur: off by default; on, a captor whose picture is held picks No blur, at most once a minute', () => {
+  assert.equal(pol().no_blur, false); assert.equal(pol({ no_blur: true }).no_blur, true);
+  const held = (clear, o) => st(Object.assign({ capture: { on: true, mine: true }, subscription: { held: true, via: 'pass', pass: true }, clear }, o || {}));
+  const m = Object.assign(newMemory(), { credLoaded: true });
+  assert.deepEqual(ops(plan(held({ mode: 'stage', level: 1, order: false }), pol(), m, 1000)), [], 'policy off: nothing');
+  const p = pol({ no_blur: true });
+  assert.deepEqual(ops(plan(held({ mode: '', level: 2, order: false }), p, m, 1000)), [], 'no clear right: nothing to pick');
+  assert.deepEqual(ops(plan(held({ mode: 'stage', level: 0, order: false }), p, m, 1000)), [], 'already clear');
+  assert.deepEqual(ops(plan(held({ mode: 'stage', level: 1, order: true }), p, m, 1000)), [], 'a host order holds it: a pick cannot clear it');
+  let r = plan(held({ mode: 'stage', level: 1, order: false }), p, m, 2000);
+  assert.deepEqual(ops(r), ['guard.noblur']);
+  assert.deepEqual(ops(plan(held({ mode: 'stage', level: 1, order: false }), p, m, 30000)), [], 'not again inside a minute');
+  assert.deepEqual(ops(plan(held({ mode: 'stage', level: 1, order: false }), p, m, 63000)), ['guard.noblur'], 'still held a minute later: again');
+  assert.deepEqual(ops(plan(held({ mode: 'stage', level: 0, order: false }), p, m, 64000)), [], 'clear now');
+  // the right moves (a new capture): the page holds the picture again, and the guard picks again
+  assert.deepEqual(ops(plan(held({ mode: 'stage', level: 1, order: false }), p, m, 130000)), ['guard.noblur']);
+});
+
+test('no_blur: a co-admin sibling picks too; with stage on only while on the Stage; a stranger-held room never', () => {
+  const p = pol({ no_blur: true, stage: true, rank: 1 });
+  const co = (clear, onStage) => st({ capture: { on: true, mine: true }, subscription: { held: true, via: 'pass', pass: true }, people: [{ id: 'sib', name: 'B', admin: true }], clear, stage: { me_on: onStage } });
+  const m = Object.assign(newMemory(), { credLoaded: true });
+  assert.ok(!ops(plan(co({ mode: 'stage', level: 2, order: false }, false), p, m, 1000)).includes('guard.noblur'), 'off the Stage: the right does not cover it yet');
+  assert.ok(ops(plan(co({ mode: 'stage', level: 2, order: false }, true), p, m, 2000)).includes('guard.noblur'));
+  assert.ok(ops(plan(co({ mode: 'all', level: 2, order: false }, false), p, Object.assign(newMemory(), { credLoaded: true }), 1000)).includes('guard.noblur'), 'mode all covers every picture');
+  const other = st({ capture: { on: true, mine: false }, clear: { mode: 'stage', level: 2, order: false } });
+  assert.deepEqual(ops(plan(other, pol({ no_blur: true }), Object.assign(newMemory(), { credLoaded: true }), 1000)), []);
+});
+
+test('no_blur: picks that do not clear stop after three and are said once; an older page is said once', () => {
+  const p = pol({ no_blur: true });
+  const held = (clear) => st({ capture: { on: true, mine: true }, subscription: { held: true }, clear });
+  const m = Object.assign(newMemory(), { credLoaded: true });
+  const c = { mode: 'all', level: 1, order: false };
+  let n = 0, gaps = 0;
+  for (let t = 1000; t < 400000; t += 3000) { const r = plan(held(c), p, m, t); n += ops(r).filter((x) => x === 'guard.noblur').length; gaps += r.events.filter((e) => e.type === 'guard.gap' && e.data.what === 'no_blur').length; }
+  assert.equal(n, 3); assert.equal(gaps, 1);
+  const r2 = plan(held(c), p, m, 1000 + 2 * 60000 + 600001);
+  assert.deepEqual(ops(r2), ['guard.noblur'], 'tries again after the back-off');
+  const m3 = Object.assign(newMemory(), { credLoaded: true });
+  let r = plan(held(undefined), p, m3, 1000);
+  assert.ok(r.events.some((e) => e.type === 'guard.gap' && e.data.what === 'no_blur'));
+  r = plan(held(undefined), p, m3, 5000);
+  assert.ok(!r.events.some((e) => e.type === 'guard.gap'));
+});
+
+// A fake meeting frame with the camera button and its chooser, as GifOS 0.9.28.34 has them.
+function camFrame({ camOff = true, gum = true } = {}) {
+  const fr = frame({ capOn: true, mine: true });
+  const w = fr.doc.querySelectorAll()[0].contentWindow;
+  const s = { camOff, blur: 2, asked: false, chooser: false, picks: [] };
+  const V = w.__gifosVideo;
+  V.camOff = () => s.camOff; V.myBlur = () => s.blur; V.camChooserOpenForTest = () => s.chooser;
+  V.outboundKind = () => (s.camOff ? (s.asked ? 'avatar' : 'blurred') : (s.asked ? 'raw' : 'blurred'));
+  V.blurClassOf = () => (s.asked ? 0 : 1);
+  V.clearStateForTest = () => ({ mode: 'stage', tapped: false, offer: true });
+  V.modOn = () => false;
+  fr.ids.cam = el('cam', { onclick: () => { if (!s.camOff) { s.camOff = true; s.chooser = false; } else s.chooser = !s.chooser; } });
+  fr.ids['campick-none'] = el('campick-none', { onclick: () => { s.chooser = false; s.blur = 0; s.asked = true; s.picks.push(0); if (gum) s.camOff = false; } });
+  return { fr, s };
+}
+
+test('page ops: guard.state reads the clear right; guard.noblur picks No blur through the chooser and puts the camera back', async () => {
+  const { fr, s } = camFrame({ camOff: true });
+  let r = await run(fr, 'guard.state', { want: '' });
+  assert.deepEqual(r.v.clear, { mode: 'stage', level: 1, out: 'blurred', blur: 2, cam_off: true, order: false });
+  assert.ok(ROOM_OPS.includes('guard.noblur'));
+  r = await run(fr, 'guard.noblur', {});
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(s.picks, [0], 'one pick, No blur');
+  assert.equal(fr.ids.cam.clicks, 2, 'open the chooser, then turn the camera back off');
+  assert.deepEqual(r.v, { picked: true, camera: 'off', out: 'avatar', level: 0 });
+  // a camera that is on: off first (the chooser opens only then), then the pick turns it back on
+  const on = camFrame({ camOff: false });
+  r = await run(on.fr, 'guard.noblur', {});
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(on.fr.ids.cam.clicks, 2); assert.deepEqual(r.v, { picked: true, camera: 'on', out: 'raw', level: 0 });
+  // an older page without the chooser
+  const old = frame({ capOn: true, mine: true });
+  r = await run(old, 'guard.noblur', {});
+  assert.equal(r.ok, false); assert.equal(r.error, 'old');
+  r = await run(old, 'guard.state', { want: '' });
+  assert.equal(r.v.clear, null);
+});

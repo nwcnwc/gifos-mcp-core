@@ -37,6 +37,11 @@
 //               bot is up there (it never moves a human), the bot on the Stage is the one that greets, and it brings
 //               up one raised hand at a time. stage_idle_s, stage_max_s, stage_takeover_s, stage_done_words: src/stagehost.js.
 //   name        optional fallback for the greeting's {bot} when the process has no bot name. GIFOS_BOT_NAME wins.
+//   no_blur     false (default). true: while the bot holds the room and the room's host right lets viewers tap to
+//               unblur (GifOS 0.9.28.34+, the room's clear mode), the bot picks No blur in the meeting through the
+//               camera chooser (guard.noblur), and picks it again whenever the page holds its picture for a new pick
+//               (a No blur counts only when picked after the right came on). Never under a host's blur order on the
+//               bot, and with stage on only while the bot is on the Stage (the right may cover the Stage only).
 //
 // plan() decides; it is pure (the unit tests drive it). RoomGuard runs it every few seconds against the bot's seat
 // (room.js guard.* ops) and does what it says.
@@ -62,6 +67,9 @@ const GREET_SETTLE_MS = 10000;
 const RANK_DELAY_MS = 60000;    // with nobody holding the room, rank N waits N x this before taking it
 const SIBLING_GONE_MS = 45000;  // the lead's seat gone this long (+20 s per rank): take the ticket back
 const RETAKE_EVERY_MS = 60000;  // a pass's moved ticket: one fresh join of the room per this long (a join takes ~15 s)
+const NOBLUR_EVERY_MS = 60000;   // one No blur pick a minute at most (a pick turns the camera on and back off)
+const NOBLUR_TRIES = 3;          // picks that did not clear this seat's picture before the guard says so and waits
+const NOBLUR_BACKOFF_MS = 600000;
 const SESSION_GONE_RE = /not in that meeting any more|No such meeting/;   // room.js / driver.js / Meet Bot: the session frame is gone
 
 // The default welcome: neutral; it adds the clear-video note only when the guard blurs everyone.
@@ -89,6 +97,7 @@ export function normalizePolicy(p, base) {
     voice: typeof p.voice === 'string' && /^[a-z]{2}_[a-z0-9]+$/i.test(p.voice.trim()) ? p.voice.trim() : '',
     picture: rel(p.picture),
     name: typeof p.name === 'string' ? p.name.trim().slice(0, 40) : '',
+    no_blur: p.no_blur === true,
     ...stage,
   };
   if (mode === 'open' && !out.credentials) throw new Error('A public majority-rules meeting (open meeting) (mode open) is held by capture: set credentials to a subscription file on a $5+ plan.');
@@ -100,7 +109,8 @@ export function newMemory() {
   const never = -Infinity;   // no throttle has run yet, whatever the clock reads
   return { credLoaded: false, capOffSince: 0, lastCapture: never, lastReload: never, lastRetake: never, siblingSeenAt: 0, pwWrongSince: 0, lastPwFix: never,
     role: 'starting', seen: null, queue: [], lastGreet: never, blurGap: false, signinAt: never,
-    stageEmptySince: null, stageFullNoted: false, promoted: null, onStage: false, served: null };
+    stageEmptySince: null, stageFullNoted: false, promoted: null, onStage: false, served: null,
+    noBlurAt: never, noBlurTries: 0, noBlurGap: false };
 }
 
 // state: the guard.state op's answer (people[].admin: the page verified that seat's admin key).
@@ -148,6 +158,7 @@ export function plan(state, policy, mem, now) {
     setRole(lead ? 'lead' : 'coadmin', lead ? 'host of the room' : 'host of the room beside its sibling');
     fixPassword('the room password is not what the policy says');
     leadDuties(state, policy, mem, now, lead, act, out);
+    noBlurDuty(state, policy, mem, now, act, out);
     return out;
   }
 
@@ -200,7 +211,32 @@ export function plan(state, policy, mem, now) {
       act('guard.credentials', {}, 'take the subscription\'s ticket back: the lead is gone');
     }
   }
+  noBlurDuty(state, policy, mem, now, act, out);
   return out;
+}
+
+// THE RE-PICK (policy no_blur). A host's own No blur counts only when picked in the meeting after the room's clear right
+// came on (the page's 'repick' rule, the same for a person), so a bot that holds the room picks it again through the
+// camera chooser when its picture is held. level > 0 while the right is on and no host order holds the bot: not
+// picked since the right came on (or picked before it). A pick that does not clear is retried a few times, then said.
+function noBlurDuty(state, policy, mem, now, act, out) {
+  if (!policy.no_blur) return;
+  const c = state.clear;
+  if (!c) {
+    if (!mem.noBlurGap) { mem.noBlurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'no_blur', note: 'This GifOS page does not say whether the room lets viewers tap to unblur (it needs 0.9.28.34 or newer).' } }); }
+    return;
+  }
+  const stageOk = c.mode !== 'stage' || !policy.stage || !!(state.stage && state.stage.me_on);
+  const need = !!c.mode && !c.order && stageOk && !(c.level === 0);
+  if (!need) { mem.noBlurTries = 0; return; }
+  if (now - mem.noBlurAt < NOBLUR_EVERY_MS) return;
+  if (mem.noBlurTries >= NOBLUR_TRIES) {
+    if (!mem.noBlurGap) { mem.noBlurGap = true; out.events.push({ type: 'guard.gap', data: { what: 'no_blur', note: 'No blur was picked ' + NOBLUR_TRIES + ' times and this seat\'s picture is still held; trying again in 10 minutes.', clear: c } }); }
+    if (now - mem.noBlurAt < NOBLUR_BACKOFF_MS) return;
+    mem.noBlurTries = 0;
+  }
+  mem.noBlurAt = now; mem.noBlurTries++;
+  act('guard.noblur', {}, 'the room\'s host right lets viewers tap to unblur: pick No blur in the meeting (only a pick after the right came on counts)');
 }
 
 function leadDuties(state, policy, mem, now, lead, act, out) {
@@ -320,7 +356,7 @@ export class RoomGuard {
       }
       const p = plan(st, this.policy, this.mem, Date.now());
       this.last = { at: new Date().toISOString(), role: p.role, participants: st && st.participants, capture: st && st.capture, password_set: st && st.password_set,
-        password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all,
+        password_ok: st && st.password_ok, subscription: st && st.subscription, blur_all: st && st.blur_all, clear: (st && st.clear) || null,
         // For a sibling's updater (gifos-meet-mcp scripts/self-update.sh): restart only while a sibling holds the room.
         seated: !!(st && st.seated), sibling_seen_at: this.mem.siblingSeenAt ? new Date(this.mem.siblingSeenAt).toISOString() : null };
       for (const e of p.events) this.note(e.type, e.data);
