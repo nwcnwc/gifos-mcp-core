@@ -50,21 +50,31 @@ function base(gifosUrl) {
   return String(gifosUrl || '').replace(/\/+$/, '');
 }
 
-// A meeting link. verifier makes it a room the host runs (admin room).
-// /meet#room=<room>[&v=<verifier>]: the room rides in the fragment, which a
-// browser never sends, so no server or log reads which meeting it is. The
-// site's router opens it as run.html#room=<room>[&v=<verifier>]. The page's own
-// address carries the same keys when the link needs relay= (a test server). (GifOS
-// 0.9.26 has no town hall: the meeting types are open, admin and join.)
-export function meetingLink(gifosUrl, room, { relay, verifier } = {}) {
-  if (!relay) {
-    return base(gifosUrl) + '/meet#room=' + room + (verifier ? '&v=' + verifier : '');
-  }
+// gifos.app (and its subdomains) routes /meet and /cast; a local site serves only files.
+function routed(gifosUrl) {
+  try { return /(^|\.)gifos\.app$/i.test(new URL(base(gifosUrl)).hostname); } catch (e) { return false; }
+}
+
+// The one link grammar (GifOS docs/links.md): a link names only WHAT (room=, v=); the PAGE names how (/meet the
+// meeting, /cast the broadcast). On gifos.app the link is the shared form, /meet#… or /cast#…, which every GifOS
+// release's router reads (relay= and at= ride along); a local site has no router, so the link is the page itself:
+// run.html#… (it forwards a room to its meeting page) or cast.html#….
+function roomLink(gifosUrl, page, room, { relay, verifier, at } = {}) {
   const h = new URLSearchParams();
   h.set('room', room);
   if (verifier) h.set('v', verifier);
-  h.set('relay', relay);
-  return base(gifosUrl) + '/run.html#' + h.toString();
+  if (at) h.set('at', String(at));
+  if (relay) h.set('relay', relay);
+  const file = routed(gifosUrl) || !relay ? '/' + page : (page === 'cast' ? '/cast.html' : '/run.html');
+  return base(gifosUrl) + file + '#' + h.toString();
+}
+
+// A meeting link. verifier makes it a room the host runs (admin room).
+// /meet#room=<room>[&v=<verifier>]: the room rides in the fragment, which a
+// browser never sends, so no server or log reads which meeting it is. (GifOS
+// 0.9.26 has no town hall: the meeting types are open, admin and join.)
+export function meetingLink(gifosUrl, room, { relay, verifier } = {}) {
+  return roomLink(gifosUrl, 'meet', room, { relay, verifier });
 }
 
 // The host part of a link the bot may join: the configured GIFOS_URL, any
@@ -84,25 +94,18 @@ export function gifosHostAllowed(link, gifosUrl) {
 
 // A broadcast link. The same link is the host's and the viewers': the host
 // is whoever holds the host password. at = start (unix seconds).
-// /cast#room=<room>&v=<verifier>[&at=<start>]; the page's hash form for a relay.
-// (GifOS 0.9.26 dropped the Visit link and Stream to friends.)
+// /cast#room=<room>&v=<verifier>[&at=<start>] (cast.html#… on a local site with a relay): the broadcast PAGE is the
+// broadcast; no key says so. (GifOS 0.9.26 dropped the Visit link and Stream to friends.)
 export function broadcastLink(gifosUrl, room, { relay, verifier, startAt } = {}) {
   if (!verifier) throw new Error('A broadcast needs a host key.');
-  if (!relay) return base(gifosUrl) + '/cast#room=' + room + '&v=' + verifier + (startAt ? '&at=' + Math.floor(Number(startAt) / 1000) : '');
-  const h = new URLSearchParams();
-  h.set('room', room);
-  h.set('v', verifier);
-  h.set('cast', '1');
-  if (startAt) h.set('at', String(Math.floor(Number(startAt) / 1000)));
-  if (relay) h.set('relay', relay);
-  return base(gifosUrl) + '/run.html#' + h.toString();
+  return roomLink(gifosUrl, 'cast', room, { relay, verifier, at: startAt ? Math.floor(Number(startAt) / 1000) : '' });
 }
 
 // The fields a meeting link names, whatever its form: the fragment link
 // (/meet|cast#room=<room>[&v=<verifier>]), the path link shared before
 // (/meet|cast/<room>[/<verifier>]), or the page's own hash
-// (run.html#room=<room>[&v=<verifier>][&cast=1]). null when it names no room; the
-// old run.html#v=<room>&av=<verifier>&bc=1 form is not read.
+// (run.html|meet.html|cast.html#room=<room>[&v=<verifier>]). null when it names no room; the
+// old run.html#v=<room>&av=<verifier>&bc=1 form is not read, and no key (cast=1) makes a broadcast: the page does.
 function linkFields(link) {
   let u;
   try { u = new URL(String(link)); } catch (e) { return null; }
@@ -112,14 +115,14 @@ function linkFields(link) {
   const path = /^\/(?:meet|cast)\/([A-Za-z0-9-]{1,64})(?:\/([a-fA-F0-9]{16,64}))?\/?$/.exec(u.pathname);
   let room = '', verifier = '', cast = !!kind && kind[1].toLowerCase() === 'cast';
   if (path) { room = path[1]; verifier = path[2] || ''; }
-  else if (h.get('room')) { room = h.get('room'); verifier = h.get('v') || ''; if (!kind) cast = h.get('cast') === '1' || /\/cast\.html$/i.test(u.pathname); }
+  else if (h.get('room')) { room = h.get('room'); verifier = h.get('v') || ''; if (!kind) cast = /\/cast\.html$/i.test(u.pathname); }
   if (!ROOM_RE.test(room)) return null;
   if (verifier && !/^[a-fA-F0-9]{16,64}$/.test(verifier)) verifier = '';
   return { room, verifier: verifier.toLowerCase(), cast };
 }
 
 // A broadcast link in any form: /cast#room=<room>&v=<verifier>, the older
-// /cast/<room>/<verifier>, or the page's own address with cast=1.
+// /cast/<room>/<verifier>, or the broadcast page's own address (cast.html#room=…).
 export function isBroadcastLink(link) {
   const f = linkFields(link);
   return !!(f && f.cast && f.verifier);

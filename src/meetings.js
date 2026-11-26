@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { readPrivate, writePrivate } from './private-file.js';
-import { newRoom, roomFromLink } from './links.js';
+import { newRoom, roomFromLink, meetingLink } from './links.js';
 
 export { newRoom, roomFromLink };
 
@@ -17,8 +17,9 @@ function stripSecrets(fields) {
   return out;
 }
 
+// An open room's link: the same builder as every other (links.js meetingLink).
 export function linkFor(gifosUrl, room, relay) {
-  return gifosUrl + '/run.html#room=' + room + (relay ? '&relay=' + encodeURIComponent(relay) : '');
+  return meetingLink(gifosUrl, room, { relay });
 }
 
 export class MeetingStore {

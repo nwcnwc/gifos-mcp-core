@@ -68,7 +68,7 @@ test('a meeting invite has every detail an invite needs, as fields and as text',
 });
 
 test('a broadcast invite says how to watch, when it starts, and the room password when there is one', () => {
-  const link = 'https://gifos.app/run.html#room=svc&v=3783bb03122c41d92d295bab&cast=1&at=1792540800';
+  const link = 'https://gifos.app/cast#room=svc&v=3783bb03122c41d92d295bab&at=1792540800';
   const inv = broadcastInvite({ title: 'Sunday service', link, start: '2026-10-25T10:00', timezone: 'America/Chicago', description: 'Live from the hall.' });
   assert.equal(inv.kind, 'broadcast');
   assert.equal(inv.watch_url, link);

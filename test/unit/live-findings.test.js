@@ -20,7 +20,7 @@ import { tmpHome } from './fixtures/tmp-home.js';
 
 const BANNER = 'Your network blocks the direct connections this meeting needs. People outside your network cannot connect to this meeting.';
 
-test('a plain room is /meet#room=<room>; an admin room adds &v=<verifier>; relay stays run.html', () => {
+test('a plain room is /meet#room=<room>; an admin room adds &v=<verifier>; a relay rides along (run.html on a local site)', () => {
   const av = 'f'.repeat(24);
   assert.equal(meetingLink('https://gifos.app/', 'abc123'), 'https://gifos.app/meet#room=abc123');
   assert.equal(roomFromLink(meetingLink('https://gifos.app', 'abc123')), 'abc123');
@@ -31,8 +31,9 @@ test('a plain room is /meet#room=<room>; an admin room adds &v=<verifier>; relay
   assert.equal(roomFromLink('https://gifos.app/meet/abc123/' + av + '/'), 'abc123');
   // GifOS 0.9.26 has no town hall: the option is gone and changes nothing.
   assert.equal(meetingLink('https://gifos.app', 'abc123', { townHall: true }), 'https://gifos.app/meet#room=abc123');
-  assert.match(meetingLink('https://gifos.app', 'abc123', { relay: 'wss://r.example' }), /\/run\.html#room=abc123&relay=/);
-  assert.match(meetingLink('https://gifos.app', 'abc123', { verifier: av, relay: 'wss://r.example' }), /\/run\.html#room=abc123&v=f{24}&relay=/);
+  assert.match(meetingLink('https://gifos.app', 'abc123', { relay: 'wss://r.example' }), /\/meet#room=abc123&relay=/);
+  assert.match(meetingLink('https://gifos.app', 'abc123', { verifier: av, relay: 'wss://r.example' }), /\/meet#room=abc123&v=f{24}&relay=/);
+  assert.match(meetingLink('http://localhost:8099', 'abc123', { relay: 'ws://localhost:1' }), /\/run\.html#room=abc123&relay=/);
 });
 
 test('the bot joins only GifOS: GIFOS_URL, gifos.app, or this computer', () => {

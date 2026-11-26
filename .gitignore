@@ -2,3 +2,4 @@ node_modules/
 .e2e/
 *.log
 __pycache__/
+node_modules

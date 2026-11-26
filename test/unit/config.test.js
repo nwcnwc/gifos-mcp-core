@@ -86,7 +86,8 @@ test('rooms and links', () => {
   const seen = new Set();
   for (let i = 0; i < 200; i++) { const r = newRoom(); assert.match(r, /^[0-9a-z]{24}$/); seen.add(r); }
   assert.equal(seen.size, 200);
-  assert.equal(linkFor('https://gifos.app', 'abc'), 'https://gifos.app/run.html#room=abc');
+  assert.equal(linkFor('https://gifos.app', 'abc'), 'https://gifos.app/meet#room=abc');
+  assert.equal(linkFor('http://127.0.0.1:9', 'abc', 'ws://127.0.0.1:1'), 'http://127.0.0.1:9/run.html#room=abc&relay=ws%3A%2F%2F127.0.0.1%3A1');
   assert.equal(roomFromLink('https://gifos.app/run.html#room=abc-1&relay=x'), 'abc-1');
   assert.equal(roomFromLink('https://gifos.app/meet/Room42'), 'Room42');
   assert.equal(roomFromLink('https://gifos.app/meet/Room42/'), 'Room42');

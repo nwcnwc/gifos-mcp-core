@@ -24,8 +24,10 @@ test('links carry the room, the verifier and the options, never a password', asy
   assert.equal(verifierFromLink(admin), k.verifier);
   assert.equal(admin.includes('admin-pass-1'), false);
   assert.equal(admin.includes(k.seedHex), false);
+  // On gifos.app a relay rides on the shared form (every release's router carries it); a local site gets the page.
   const m = meetingLink('https://gifos.app/', room, { verifier: k.verifier, relay: 'wss://relay.example.test' });
-  assert.match(m, /\/run\.html#/);
+  assert.match(m, /^https:\/\/gifos\.app\/meet#/);
+  assert.match(meetingLink('http://127.0.0.1:8099', room, { relay: 'ws://127.0.0.1:1' }), /^http:\/\/127\.0\.0\.1:8099\/run\.html#room=/);
   assert.equal(roomFromLink(m), room);
   assert.equal(linkParams(m).get('room'), room);
   assert.equal(linkParams(m).get('v'), k.verifier);
@@ -57,10 +59,15 @@ test('links carry the room, the verifier and the options, never a password', asy
   assert.equal(isBroadcastLink(admin), false);
   assert.equal(isBroadcastLink('https://gifos.app/cast/' + room), false);
   assert.throws(() => broadcastLink('https://gifos.app', room, {}), /host key/);
-  // A custom relay keeps the page hash, including cast=1 on a broadcast.
+  // A broadcast is its page, never a key: /cast#… on gifos.app (a relay rides along), cast.html#… on a local site.
   const relayCast = broadcastLink('https://gifos.app', room, { verifier: k.verifier, relay: 'wss://relay.example.test', startAt: at });
-  assert.match(relayCast, /\/run\.html#/);
-  assert.equal(linkParams(relayCast).get('cast'), '1');
+  assert.match(relayCast, /^https:\/\/gifos\.app\/cast#/);
+  assert.equal(linkParams(relayCast).get('cast'), null);
+  assert.equal(isBroadcastLink(relayCast), true);
+  const localCast = broadcastLink('http://127.0.0.1:8099', room, { verifier: k.verifier, relay: 'ws://127.0.0.1:1' });
+  assert.match(localCast, /^http:\/\/127\.0\.0\.1:8099\/cast\.html#room=/);
+  assert.equal(linkParams(localCast).get('cast'), null);
+  assert.equal(isBroadcastLink(localCast), true);
   assert.equal(linkParams(relayCast).get('room'), room);
   assert.equal(linkParams(relayCast).get('v'), k.verifier);
   assert.equal(linkParams(relayCast).get('av'), null);
@@ -77,9 +84,11 @@ test('every link builder emits the one grammar', () => {
     [meetingLink('https://gifos.app/', room, { verifier: v }), '/meet'],
     [broadcastLink('https://gifos.app', room, { verifier: v }), '/cast'],
     [broadcastLink('https://gifos.app', room, { verifier: v, startAt: at }), '/cast'],
-    [meetingLink('https://gifos.app', room, { relay: 'ws://127.0.0.1:1' }), '/run.html'],
-    [meetingLink('https://gifos.app', room, { verifier: v, relay: 'ws://127.0.0.1:1' }), '/run.html'],
-    [broadcastLink('https://gifos.app', room, { verifier: v, relay: 'ws://127.0.0.1:1', startAt: at }), '/run.html'],
+    [meetingLink('https://gifos.app', room, { relay: 'ws://127.0.0.1:1' }), '/meet'],
+    [meetingLink('https://gifos.app', room, { verifier: v, relay: 'ws://127.0.0.1:1' }), '/meet'],
+    [broadcastLink('https://gifos.app', room, { verifier: v, relay: 'ws://127.0.0.1:1', startAt: at }), '/cast'],
+    [meetingLink('http://127.0.0.1:8099', room, { verifier: v, relay: 'ws://127.0.0.1:1' }), '/run.html'],
+    [broadcastLink('http://127.0.0.1:8099', room, { verifier: v, relay: 'ws://127.0.0.1:1' }), '/cast.html'],
   ];
   for (const [url, path] of built) {
     const u = new URL(url);
@@ -87,7 +96,7 @@ test('every link builder emits the one grammar', () => {
     assert.equal(u.pathname.includes(room), false);
     const h = new URLSearchParams(u.hash.replace(/^#/, ''));
     assert.equal(h.get('room'), room);
-    for (const old of ['av', 'bc', 's', 'j', 'k']) assert.equal(h.has(old), false, old);
+    for (const old of ['av', 'bc', 's', 'j', 'k', 'cast']) assert.equal(h.has(old), false, old);
     if (h.has('v')) assert.equal(h.get('v'), v);
   }
 });
@@ -104,7 +113,7 @@ test('old path forms and the fragment form both name the room', () => {
     ['https://gifos.app/meet#room=' + R, R, '', false],
     ['https://gifos.app/meet#room=' + R + '&v=' + V, R, V, false],
     ['https://gifos.app/cast#room=' + R + '&v=' + V + '&at=1', R, V, true],
-    ['https://gifos.app/run.html#room=' + R + '&v=' + V + '&cast=1', R, V, true],
+    ['https://gifos.app/run.html#room=' + R + '&v=' + V + '&cast=1', R, V, false],   // no key makes a broadcast: the page does
     ['https://gifos.app/run.html#room=' + R + '&v=' + V, R, V, false],
     ['https://gifos.app/versions/0.9.28/cast.html#room=' + R + '&v=' + V, R, V, true],
   ];
