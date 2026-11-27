@@ -31,6 +31,13 @@ pinned to an exact commit. Everything runs on your own computer; there is no hos
 - **Speech: Kokoro** ([kokoro-js](https://github.com/hexgrad/kokoro) 1.2.1, an exact-pinned normal dependency)
   with its default voice `af_heart`. `say` takes an optional `voice` for one line. See *Endpoints*.
 - **Speech to text: GifOS Whisper** (the Offline Captions app from the GifOS store), in the headless browser.
+- **The booth** (`src/booth.js`, `src/tools/booth.js`, `registerBoothTools`): a broadcast's host seat (the `/cast`
+  page) in its own headless browser and profile: `open_booth`, `play_video` (one file, a list, a loop; bad spots skipped;
+  a stuck video, a lost page or a new GifOS release reloads and resumes the same second; filler mode
+  `yield_to_people` gives the Stage to any person who takes it and resumes when they leave), `stop_video`,
+  `publish_to_tv` / `update_tv_listing` / `stop_tv_listing` (the signed gifos.tv listing the /cast page's "Publish to
+  GifOS.tv" button makes, signed with the room's host key in the host page; the page then keeps it live),
+  `booth_status`, `close_booth`. gifos-meet-mcp registers them; its examples/channel runs a 24/7 channel with them.
 - **Links** (`src/links.js`). Room links are minted here. A host's room carries only the verifier of the host
   key, derived as GifOS does (PBKDF2-SHA256 310000 rounds → Ed25519 → SHA-256); the password never leaves
   the process. The room name rides in the part after #, which browsers never send to a server, so it never reaches GifOS's servers or logs. The simple public forms, gifos.app/meet/<room> and gifos.app/meet/<room>/<verifier> (hosted), work forever and are fine for links you write by hand, like gifos.app/meet/welcome; they put the room name in the address a server sees.
