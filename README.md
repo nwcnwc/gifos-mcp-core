@@ -51,6 +51,10 @@ The servers drive the browser already on this computer: `GIFOS_CHROME` if set, e
 Microsoft Edge, else a Chromium that `npx playwright install chromium` installed earlier. They never download
 or install a browser. With none of these the server stops with a message saying what to install.
 
+The broadcast booth (`open_booth`) runs headless and paints no pictures by default: video, canvas and img are
+hidden by CSS in its own window, which nobody sees, so the computer does not composite the film in software. The
+film still plays and is sent to viewers. `GIFOS_BOOTH_PAINT=1` (or `GIFOS_HEADLESS=0`) paints them.
+
 `GIFOS_BOT_MODE=core` needs no browser, and `GIFOS_CORE_MODE=1` while core mode is opt-in in `@gifos-app/agent`
 (without it a core join is refused; under `auto` that falls back to the browser). The bot (src/core-driver.js) runs each meeting on the meeting's own core,
 through `@gifos-app/agent`, over WebRTC data channels; Node 22 or later. It reads people, chat and the

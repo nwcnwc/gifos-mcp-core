@@ -46,6 +46,9 @@ export function loadConfig(env = process.env) {
     coreKeys: String(env.GIFOS_CORE_KEYS || '').split(',').map((s) => s.trim()).filter(Boolean),
     headless: env.GIFOS_HEADLESS !== '0',
     chrome: String(env.GIFOS_CHROME || '').trim(),
+    // The booth's own window is seen by nobody when headless, so by default it paints no pictures (video, canvas and img
+    // hidden by CSS): the film still plays and is still sent. GIFOS_BOOTH_PAINT=1, or a shown browser, paints them.
+    boothPaint: env.GIFOS_BOOTH_PAINT === '1' || env.GIFOS_HEADLESS === '0',
     botAudio: env.GIFOS_BOT_AUDIO ? path.resolve(String(env.GIFOS_BOT_AUDIO).trim()) : '', // Chromium needs an absolute path
     shotsDir: String(env.GIFOS_MCP_SHOTS || '').trim(),
     timeoutMs: Number(env.GIFOS_TIMEOUT_MS) > 0 ? Number(env.GIFOS_TIMEOUT_MS) : 120000,

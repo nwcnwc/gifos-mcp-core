@@ -14,6 +14,9 @@ test('defaults', () => {
   assert.equal(c.gifosUrl, DEFAULT_GIFOS_URL);
   assert.equal(c.sttApp, 'offline-stt-whisper');
   assert.equal(c.headless, true);
+  assert.equal(c.boothPaint, false);
+  assert.equal(loadConfig({ GIFOS_BOOTH_PAINT: '1' }).boothPaint, true);
+  assert.equal(loadConfig({ GIFOS_HEADLESS: '0' }).boothPaint, true);
   assert.equal(c.relay, '');
   assert.equal(c.timeoutMs, 120000);
   assert.equal(loadConfig({ GIFOS_STT_APP: 'none' }).sttApp, '');

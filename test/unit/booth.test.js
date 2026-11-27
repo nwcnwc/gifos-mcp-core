@@ -2,7 +2,7 @@
 // same file again past the spot, a stuck video and a new release that reload, and the tools' argument checks.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Booth, BoothPool } from '../../src/booth.js';
+import { Booth, BoothPool, NO_PAINT_CSS, noPaintScript } from '../../src/booth.js';
 import { registerBoothTools } from '../../src/tools/booth.js';
 
 function fakeBooth(files, { loop = true, latest = '' } = {}) {
@@ -153,4 +153,20 @@ test('a credentials file is taken once, and again when the file changes (a new p
     await mk('QkJC').loadCredentials();          // a new file: taken
     assert.deepEqual(used, ['QUFB', 'QkJC']);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('no paint: the script adds one style that hides only video, canvas and img', () => {
+  assert.equal(NO_PAINT_CSS, 'video,canvas,img{visibility:hidden!important}');
+  const added = [], listeners = {};
+  const doc = {
+    documentElement: { appendChild: (n) => added.push(n) },
+    head: null,
+    getElementById: (id) => added.find((n) => n.id === id) || null,
+    createElement: () => ({}),
+    addEventListener: (ev, f) => { listeners[ev] = f; },
+  };
+  new Function('document', noPaintScript())(doc);
+  listeners.DOMContentLoaded();                // the second call finds the style and adds nothing
+  assert.equal(added.length, 1);
+  assert.equal(added[0].textContent, NO_PAINT_CSS);
 });

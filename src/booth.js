@@ -174,6 +174,16 @@ async function tvInPage({ op, seed, rk, f }) {
   } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; }
 }
 
+// No paint: an unseen headless window would composite every playing picture in software (about a core on a small
+// computer). Hiding video, canvas and img stops the painting; decoding, captureStream, canvas drawing and the
+// broadcast go on unchanged, and every button stays visible and clickable.
+export const NO_PAINT_CSS = 'video,canvas,img{visibility:hidden!important}';
+export function noPaintScript() {
+  return 'try{(function(){var add=function(){if(document.getElementById("gifos-no-paint"))return;var s=document.createElement("style");'
+    + 's.id="gifos-no-paint";s.textContent=' + JSON.stringify(NO_PAINT_CSS) + ';(document.head||document.documentElement).appendChild(s);};'
+    + 'if(document.documentElement)add();document.addEventListener("DOMContentLoaded",add);})();}catch(e){}';
+}
+
 export class BoothPool {
   // cfg: the core config (home, gifosUrl, relay, chrome, headless). site: ctx.site (the live release), optional.
   constructor(cfg, { site, launch } = {}) {
@@ -266,6 +276,7 @@ export class Booth {
         + 'sessionStorage.setItem("gifos_appear_ok","1");sessionStorage.setItem("gifos_appeared","1");sessionStorage.setItem("gifos_more_tools","1");}catch(e){}'
         + 'try{(' + videoHook.toString() + ')(' + EARLY_S + ');}catch(e){}',
     });
+    if (!this.cfg.boothPaint) await this.ctx.addInitScript({ content: noPaintScript() });
     this.page = this.ctx.pages()[0] || await this.ctx.newPage();
     this.watchPage();
     if (this.credB64) await this.loadCredentials();
