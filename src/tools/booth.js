@@ -56,7 +56,7 @@ export function registerBoothTools(server, ctx) {
 
   server.registerTool('play_video', {
     title: 'Play video files into the broadcast',
-    description: 'Plays video files from this computer into the broadcast with the page\'s own Rebroadcast button: everyone watching sees and hears them, marked Prerecorded. Give path (one file) or paths (a list, played in order); loop true plays the list again and again. The next file starts the moment one ends. What played before stops. A file that stops well before its end (a bad spot) skips past the spot and plays on; a stuck video, a lost page or a new GifOS release reloads the page and carries on from the same second. start_at_s starts the first file later. clear true (default) picks No blur for the video where the room lets viewers see it clear.',
+    description: 'Plays video files from this computer into the broadcast with the page\'s own Rebroadcast button: everyone watching sees and hears them, marked Prerecorded. Give path (one file) or paths (a list, played in order); loop true plays the list again and again. The next file starts the moment one ends. What played before stops. With yield_to_people (filler mode) the booth gives the Stage to any person who takes it and carries on when they leave it. A file that stops well before its end (a bad spot) skips past the spot and plays on; a stuck video, a lost page or a new GifOS release reloads the page and carries on from the same second. start_at_s starts the first file later. clear true (default) picks No blur for the video where the room lets viewers see it clear.',
     inputSchema: {
       booth_id: boothId,
       path: z.string().min(1).max(4096).optional().describe('One video file (for example .webm or .mp4).'),
@@ -64,11 +64,12 @@ export function registerBoothTools(server, ctx) {
       loop: z.boolean().optional().describe('Play the list again from the start when it ends (default false).'),
       start_at_s: z.number().min(0).max(86400).optional().describe('Start the first file at this second.'),
       clear: z.boolean().optional().describe('Pick No blur for the video when the room allows it (default true).'),
+      yield_to_people: z.boolean().optional().describe('Filler mode (default false): when a person takes the Stage (a co-host, or someone the host let up), the video stops at once and the booth steps off the Stage without fighting for it; when the Stage is free of people again, the same video goes on from the same second. The gifos.tv listing stays live throughout.'),
     },
-  }, guarded(async ({ booth_id, path: one, paths, loop, start_at_s, clear }) => {
+  }, guarded(async ({ booth_id, path: one, paths, loop, start_at_s, clear, yield_to_people }) => {
     if (!!one === !!(paths && paths.length)) throw new Error('Give path or paths.');
     const files = (paths || [one]).map((p) => path.resolve(String(p)));
-    return ok({ booth_id, ...(await boothOf(booth_id).play(files, { loop, startAt: start_at_s || 0, clear })) });
+    return ok({ booth_id, ...(await boothOf(booth_id).play(files, { loop, startAt: start_at_s || 0, clear, yieldToPeople: yield_to_people })) });
   }));
 
   server.registerTool('stop_video', {
@@ -90,20 +91,20 @@ export function registerBoothTools(server, ctx) {
 
   server.registerTool('publish_to_tv', {
     title: 'List the broadcast on gifos.tv',
-    description: 'Lists the broadcast whose booth is open (a room you host) on gifos.tv, the public directory of live GifOS broadcasts: the same signed listing as the /cast page\'s "Publish to GifOS.tv" button, signed with the room\'s host key on this computer. title and description are public; the thumbnail comes from thumbnail_path or a still of the Stage (the default when no file is given and something plays). password_needed shows a "Password needed" badge. From then on the host page itself tells gifos.tv it is on air, sends a keep-alive every few minutes and goes off air when the host leaves; the booth\'s profile remembers the listing across restarts. Publishing again replaces the listing (use update_tv_listing to change only some fields). Everything given here is public.',
+    description: 'Lists the broadcast whose booth is open (a room you host) on gifos.tv, the public directory of live GifOS broadcasts: the same signed listing as the /cast page\'s "Publish to GifOS.tv" button, signed with the room\'s host key on this computer. title and description are public; the thumbnail comes from thumbnail_path or a still of the Stage (the default when no file is given and something plays). pw_needed shows a "Password needed" badge. From then on the host page itself tells gifos.tv it is on air, sends a keep-alive every few minutes and goes off air when the host leaves; the booth\'s profile remembers the listing across restarts. Publishing again replaces the listing (use update_tv_listing to change only some fields). Everything given here is public.',
     inputSchema: {
       booth_id: boothId,
       title: z.string().min(1).max(80).describe('The public title.'),
       description: z.string().max(500).optional().describe('The public description (up to 500 characters).'),
       ...thumbFields,
       tip_address: tipField,
-      password_needed: z.boolean().optional().describe('Show "Password needed" (for a room with a password).'),
+      pw_needed: z.boolean().optional().describe('Show "Password needed" (for a room with a password).'),
     },
-  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, password_needed }) => {
+  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, pw_needed }) => {
     const b = boothOf(booth_id);
     const thumbB64 = thumbOf(thumbnail_path);
     const tip = tip_address || '';
-    const r = await b.tvList({ title, desc: description || '', thumbB64, fromStage: !thumbB64 && thumbnail_from_stage !== false, tip, pw: !!password_needed });
+    const r = await b.tvList({ title, desc: description || '', thumbB64, fromStage: !thumbB64 && thumbnail_from_stage !== false, tip, pw: !!pw_needed });
     keepTip(booth_id, tip);
     return ok({ booth_id, listed: true, url: r.url, listing: r.listing, note: 'The host page keeps this listing on air while the booth is open.' });
   }));
@@ -117,9 +118,9 @@ export function registerBoothTools(server, ctx) {
       description: z.string().max(500).optional(),
       ...thumbFields,
       tip_address: tipField,
-      password_needed: z.boolean().optional(),
+      pw_needed: z.boolean().optional(),
     },
-  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, password_needed }) => {
+  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, pw_needed }) => {
     const b = boothOf(booth_id);
     const now = await b.tvRead();
     if (!now) throw new Error('This broadcast is not listed on gifos.tv. Use publish_to_tv first.');
@@ -128,7 +129,7 @@ export function registerBoothTools(server, ctx) {
     const r = await b.tvList({
       title: title || now.title, desc: description === undefined ? (now.desc || '') : description,
       thumbB64, fromStage: !thumbB64 && thumbnail_from_stage === true, keepThumb: now.thumb || '',
-      tip, pw: password_needed === undefined ? !!now.pw : password_needed,
+      tip, pw: pw_needed === undefined ? !!now.pw : pw_needed,
     });
     keepTip(booth_id, tip);
     return ok({ booth_id, listed: true, url: r.url, listing: r.listing });

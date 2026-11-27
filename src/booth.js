@@ -29,6 +29,7 @@ const START_FAILS_MAX = 5;       // files in a row that would not start: the boo
 const EARLY_S = 8;               // an end more than this many seconds before the length is a bad spot, not the end
 const EARLY_TRIES = 5;           // tries at one bad spot before moving on to the next file
 const SITE_CHECK_MS = 10 * 60 * 1000;
+const YIELD_CLEAR_MS = 1500;     // filler mode: the Stage free of people this long, then the video goes on
 
 // Runs INSIDE the page (stringified into the init script). Each <video> the page makes gets:
 //  - resume: window.__boothSeek set means jump there on loadedmetadata, before it plays (the page has no start input);
@@ -93,6 +94,8 @@ function pageState() {
     status: txt('status'),
     page_version: ver ? ver[1] : '',
     skips: window.__boothSkips || 0,
+    // Who else is on the Stage (a person who stepped up: a co-host, or someone the host let up).
+    others: (() => { try { const i = g.stageInfo ? g.stageInfo() : null; return i && Array.isArray(i.stagers) ? i.stagers.filter((x) => !x.me).map((x) => x.name || 'someone') : []; } catch (e) { return []; } })(),
   };
 }
 
@@ -212,7 +215,8 @@ export class Booth {
     this.fails = 0;
     this.notHostSince = 0;
     this.goneSince = 0;
-    this.counts = { plays: 0, ends: 0, skips: 0, early: 0, reloads: 0 };
+    this.counts = { plays: 0, ends: 0, skips: 0, early: 0, reloads: 0, yields: 0 };
+    this.yielded = null;         // { since, to: [names], clearSince } while the booth leaves the Stage to people
     this.lastEvent = null;
     this.lastError = '';
     this.loop = null;
@@ -361,14 +365,14 @@ export class Booth {
   }
 
   // files: absolute paths. Replaces what plays now.
-  async play(files, { loop = false, startAt = 0, clear = true } = {}) {
+  async play(files, { loop = false, startAt = 0, clear = true, yieldToPeople = false } = {}) {
     this.need();
     for (const f of files) if (!fs.existsSync(f) || !fs.statSync(f).isFile()) throw new Error('No video file at ' + f + '.');
     // What played before stops first; with no list the loop does not take that stop for an early end.
-    this.list = null; this.playing = null; this.resume = null;
+    this.list = null; this.playing = null; this.resume = null; this.yielded = null;
     const st = await this.read();
     if (st.rb) await this.stopNow();
-    this.list = { files, loop: !!loop, i: -1, clear: clear !== false };
+    this.list = { files, loop: !!loop, i: -1, clear: clear !== false, yieldToPeople: !!yieldToPeople };
     this.resume = startAt > 0 ? { i: 0, file: files[0], pos: startAt } : null;
     this.fails = 0;
     this.wake();
@@ -385,7 +389,7 @@ export class Booth {
 
   async stop() {
     this.need();
-    this.list = null; this.playing = null; this.resume = null;
+    this.list = null; this.playing = null; this.resume = null; this.yielded = null;
     await this.stopNow();
     return this.state();
   }
@@ -439,6 +443,28 @@ export class Booth {
     const moved = await this.siteMoved();
     if (moved) return this.reload('GifOS moved to ' + moved);
     if (!this.list) return;
+    // Filler mode: a person on the Stage has it. The video stops at once and the booth steps off (it never fights for
+    // the Stage); once the Stage has been free of people for a moment, the same video goes on from the same second.
+    if (this.list.yieldToPeople) {
+      if (st.others.length) {
+        if (!this.yielded) {
+          if (this.playing) this.resume = { i: this.playing.i, file: this.playing.file, pos: st.rb ? st.rb.pos : this.playing.pos };
+          this.playing = null;
+          this.yielded = { since: now, to: st.others, clearSince: 0 };
+          this.counts.yields++;
+          if (st.rb) await this.stopNow();
+          await this.page.evaluate(() => { try { window.__gifosVideo.stageForTest(false); } catch (e) { /* not on the Stage */ } }).catch(() => {});
+          this.note('yield', { to: st.others, at: this.resume ? Math.round(this.resume.pos) : null });
+        } else { this.yielded.to = st.others; this.yielded.clearSince = 0; }
+        return;
+      }
+      if (this.yielded) {
+        if (!this.yielded.clearSince) this.yielded.clearSince = now;
+        if (now - this.yielded.clearSince < YIELD_CLEAR_MS) return;
+        this.note('resume', { after_s: Math.round((now - this.yielded.since) / 1000) });
+        this.yielded = null;
+      }
+    }
     // The seat stays on the Stage between videos, so a video's end is only a source swap.
     if (!st.rb) await this.page.evaluate(() => { try { window.__gifosVideo.stageForTest(true); } catch (e) { /* the Rebroadcast sheet steps up itself */ } }).catch(() => {});
     if (st.rb) {
@@ -527,7 +553,8 @@ export class Booth {
       relay: !!st.relay,
       on_air: !!st.rb,
       video: st.rb ? { file: p ? path.basename(p.file) : null, index: p ? p.i : null, pos_s: Math.round(st.rb.pos), length_s: Math.round(st.rb.len || 0), paused: !!st.rb.paused } : null,
-      playlist: this.list ? { files: this.list.files.length, loop: this.list.loop } : null,
+      playlist: this.list ? { files: this.list.files.length, loop: this.list.loop, yield_to_people: this.list.yieldToPeople } : null,
+      yielding_to: this.yielded ? this.yielded.to : null,
       watching: st.watching || null,
       gifos_tv: st.tv,
       page_version: st.page_version || null,

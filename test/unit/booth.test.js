@@ -9,7 +9,7 @@ function fakeBooth(files, { loop = true, latest = '' } = {}) {
   const site = { v: latest, latest() { return this.v; } };
   const pool = new BoothPool({ home: '/nonexistent', gifosUrl: 'https://gifos.app' }, { site });
   const b = new Booth(pool, { room: 'tv-test', verifier: 'a'.repeat(24), seedHex: '00', name: 'TV' });
-  const model = { host: true, relay: true, hooks: true, rb: null, skips: 0 };
+  const model = { host: true, relay: true, hooks: true, rb: null, skips: 0, others: [] };
   const started = [], reloads = [];
   b.read = async () => ({ ...model });
   b.startFile = async (file, at) => { started.push([file, Math.round(at || 0)]); model.rb = { pos: at || 0, len: 100, paused: false, sending: true }; return { ok: true, pos: at || 0, len: 100 }; };
@@ -17,7 +17,8 @@ function fakeBooth(files, { loop = true, latest = '' } = {}) {
   b.page = { evaluate: async () => {}, waitForFunction: async () => {} };
   b.pickNoBlur = async () => {};
   b.trace = async () => [];
-  b.list = { files, loop, i: -1, clear: true };
+  b.list = { files, loop, i: -1, clear: true, yieldToPeople: true };
+  b.stopNow = async () => { model.rb = null; };
   b.loadedOn = latest;
   return { b, model, started, reloads, site };
 }
@@ -91,6 +92,27 @@ test('not the host for two minutes reloads; the page away for 45 s reloads', asy
   b.goneSince = Date.now() - 46000;
   await b.tick();
   assert.match(reloads[1], /went away/);
+});
+
+test('filler mode: a person on the Stage stops the video at once; the Stage free again resumes the same second', async () => {
+  const { b, model, started } = fakeBooth(['/a.webm', '/b.webm']);
+  await b.tick();
+  model.rb.pos = 50; await b.tick();
+  model.others = ['Ada']; model.rb.pos = 51;
+  await b.tick();
+  assert.equal(model.rb, null, 'the video stopped');
+  assert.deepEqual(b.yielded.to, ['Ada']);
+  await b.tick(); await b.tick();
+  assert.equal(started.length, 1, 'nothing starts while a person has the Stage');
+  assert.equal(b.counts.early, 0, 'a yield is not an early end');
+  model.others = [];
+  await b.tick();
+  assert.equal(started.length, 1, 'waits a moment after the Stage is free');
+  b.yielded.clearSince = Date.now() - 2000;
+  await b.tick();
+  assert.deepEqual(started[1], ['/a.webm', 51]);
+  assert.equal(b.yielded, null);
+  assert.equal(b.counts.yields, 1);
 });
 
 test('tools: path or paths, and a host password never comes back in an error', async () => {
