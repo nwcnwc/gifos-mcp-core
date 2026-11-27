@@ -367,7 +367,11 @@ export class Booth {
   async pickNoBlur() {
     const want = await this.page.evaluate(() => { const b = document.getElementById('rb-blur'); return !!(b && b.getAttribute('aria-pressed') === 'false' && b.getClientRects().length); }).catch(() => false);
     if (!want) return;
-    await this.page.locator('#rb-blur').click({ timeout: 3000 }).then(() => this.note('noblur'), () => {});
+    // A button another element covers (some page layouts float a bar over the rebroadcast panel) refuses a pointer
+    // click; the keyboard presses it all the same.
+    const clicked = await this.page.locator('#rb-blur').click({ timeout: 3000 }).then(() => true, () => false);
+    if (clicked) { this.note('noblur'); }
+    else if (await this.page.locator('#rb-blur').press('Enter', { timeout: 3000 }).then(() => true, () => false)) this.note('noblur', { how: 'key' });
     await this.ackNotices();
   }
 
