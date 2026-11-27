@@ -134,3 +134,23 @@ test('tools: path or paths, and a host password never comes back in an error', a
   assert.ok(r3.isError);
   assert.ok(!r3.content[0].text.includes(pw));
 });
+
+test('a credentials file is taken once, and again when the file changes (a new pass replaces the old)', async () => {
+  const fs = await import('node:fs'); const os = await import('node:os'); const path = await import('node:path');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'booth-cred-'));
+  try {
+    const pool = new BoothPool({ home, gifosUrl: 'https://gifos.app' });
+    fs.mkdirSync(path.join(home, 'booth-tv-test'));
+    const used = [];
+    const mk = (b64) => {
+      const b = new Booth(pool, { room: 'tv-test', verifier: 'a'.repeat(24), seedHex: '00', name: 'TV', credentialsB64: b64 });
+      b.page = { goto: async () => {}, waitForFunction: async () => true, evaluate: async (fn, arg) => { used.push(arg); return { loaded: true, added: 1, in_use: true, passes: used.length }; } };
+      return b;
+    };
+    await mk('QUFB').loadCredentials();
+    await mk('QUFB').loadCredentials();          // the same file: not loaded again
+    assert.deepEqual(used, ['QUFB']);
+    await mk('QkJC').loadCredentials();          // a new file: taken
+    assert.deepEqual(used, ['QUFB', 'QkJC']);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});

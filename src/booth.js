@@ -19,6 +19,9 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { launchInstalled } from './browser.js';
 import { log } from './log.js';
+import { createHash } from 'node:crypto';
+
+const credSha = (b64) => createHash('sha256').update(String(b64 || '')).digest('hex');
 
 const POLL_MS = 1000;
 const HOST_WAIT_MS = 90000;      // a fresh page must be the host with its relay up within this
@@ -96,6 +99,9 @@ function pageState() {
     skips: window.__boothSkips || 0,
     // The rebroadcast's No blur pick (#rb-blur): shown only while the room's clear right lets viewers tap to unblur.
     no_blur: (() => { const b = document.getElementById('rb-blur'); return !b ? 'not offered' : b.getAttribute('aria-pressed') === 'true' ? 'picked' : 'offered'; })(),
+    // The room's clear right as this page reads it: 'stage' (the host showed Clear Stage), 'all', or '' (viewers get a
+    // blurred picture whatever the host picks).
+    clear_right: (() => { try { const c = g.clearStateForTest ? g.clearStateForTest() : null; return c ? c.mode || '' : null; } catch (e) { return null; } })(),
     // Who else is on the Stage (a person who stepped up: a co-host, or someone the host let up).
     others: (() => { try { const i = g.stageInfo ? g.stageInfo() : null; return i && Array.isArray(i.stagers) ? i.stagers.filter((x) => !x.me).map((x) => x.name || 'someone') : []; } catch (e) { return []; } })(),
   };
@@ -274,20 +280,26 @@ export class Booth {
     this.page.on('dialog', (d) => d.dismiss().catch(() => {}));
   }
 
-  // A credentials file goes into the profile the way Settings > Subscription takes one. Loaded only when the profile
-  // holds no pass yet (the profile keeps it across restarts).
+  // A credentials file goes into the profile the way Settings > Subscription takes one. Taken again whenever the file's
+  // bytes differ from the ones this profile last took (credentials.sha in the profile), so a new pass (one that adds
+  // Clear Stage, say) replaces the old one on the next open: the page keeps the better pass (the best-plan rule).
+  // The same file is not loaded twice.
   async loadCredentials() {
+    const shaFile = path.join(this.cfg.home, 'booth-' + this.room, 'credentials.sha');
+    const sha = credSha(this.credB64);
+    let had = ''; try { had = fs.readFileSync(shaFile, 'utf8').trim(); } catch (e) { had = ''; }
+    if (had === sha) { this.note('credentials', { loaded: false, same_file: true }); return; }
     await this.page.goto(this.base() + '/run.html', { waitUntil: 'load' });
     await this.page.waitForFunction(() => window.GifOS && GifOS.meetSubs && typeof GifOS.meetSubs.useFile === 'function', null, { timeout: 60000 })
       .catch(() => { throw new Error('This GifOS site cannot take a credentials file.'); });
     const r = await this.page.evaluate(async (b64) => {
       const M = GifOS.meetSubs;
-      let had = 0; try { had = (await M.passes()).length; } catch (e) { had = 0; }
-      if (had) return { loaded: false, had };
       const st = await M.useFile(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
       let n = 0; try { n = (await M.passes()).length; } catch (e) { n = 0; }
-      return { loaded: true, status: st && st.status ? String(st.status) : null, passes: n };
+      const took = st && st.took && st.took.passes ? st.took.passes : null;
+      return { loaded: true, added: took ? took.added : null, in_use: took ? !!took.inUse : null, passes: n };
     }, this.credB64);
+    try { fs.writeFileSync(shaFile, sha + '\n', { mode: 0o600 }); } catch (e) { /* loaded again next time */ }
     this.note('credentials', r);
   }
 
@@ -566,6 +578,7 @@ export class Booth {
       yielding_to: this.yielded ? this.yielded.to : null,
       watching: st.watching || null,
       no_blur: st.rb ? st.no_blur : null,
+      clear_right: st.clear_right === undefined ? null : st.clear_right,
       gifos_tv: st.tv,
       page_version: st.page_version || null,
       site_latest: this.siteLatest() || null,
