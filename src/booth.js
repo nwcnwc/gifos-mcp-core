@@ -94,6 +94,8 @@ function pageState() {
     status: txt('status'),
     page_version: ver ? ver[1] : '',
     skips: window.__boothSkips || 0,
+    // The rebroadcast's No blur pick (#rb-blur): shown only while the room's clear right lets viewers tap to unblur.
+    no_blur: (() => { const b = document.getElementById('rb-blur'); return !b ? 'not offered' : b.getAttribute('aria-pressed') === 'true' ? 'picked' : 'offered'; })(),
     // Who else is on the Stage (a person who stepped up: a co-host, or someone the host let up).
     others: (() => { try { const i = g.stageInfo ? g.stageInfo() : null; return i && Array.isArray(i.stagers) ? i.stagers.filter((x) => !x.me).map((x) => x.name || 'someone') : []; } catch (e) { return []; } })(),
   };
@@ -563,6 +565,7 @@ export class Booth {
       playlist: this.list ? { files: this.list.files.length, loop: this.list.loop, yield_to_people: this.list.yieldToPeople } : null,
       yielding_to: this.yielded ? this.yielded.to : null,
       watching: st.watching || null,
+      no_blur: st.rb ? st.no_blur : null,
       gifos_tv: st.tv,
       page_version: st.page_version || null,
       site_latest: this.siteLatest() || null,
