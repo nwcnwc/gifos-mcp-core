@@ -4,6 +4,8 @@ export { createServer } from './server.js';
 export { createContext, GONE_RE } from './context.js';
 export { registerRoomTools } from './tools/room.js';
 export { registerGuardTools } from './tools/guard.js';
+export { registerBoothTools } from './tools/booth.js';
+export { BoothPool, Booth } from './booth.js';
 export { roomKind, kindField } from './kind.js';
 export { RoomGuard, plan as guardPlan, normalizePolicy as guardPolicy, newMemory as guardMemory, greetingText, startGuardsFromConfig, GREETING, CLEAR_VIDEO_NOTE, defaultGreeting } from './guard.js';
 export { ROOM_OPS, TURNS_OPS, OLD_SITE, roomPageOp, turnsPageOp } from './room.js';

@@ -174,6 +174,7 @@ export async function runMain(product, argv = process.argv.slice(2), env = proce
     ctx.clock.stop();
     if (ctx.site) ctx.site.stop();
     if (typeof product.onClose === 'function') await Promise.resolve(product.onClose(ctx)).catch(() => {});
+    if (ctx.booths) await ctx.booths.closeAll().catch(() => {});   // broadcast host seats leave the way the page does
     await bot.close().catch(() => {});
     if (srv) srv.close();
     process.exit(code);
