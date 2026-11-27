@@ -102,7 +102,7 @@ test('tools: path or paths, and a host password never comes back in an error', a
     guarded: (fn) => async (a) => { try { return await fn(a); } catch (e) { return { isError: true, content: [{ type: 'text', text: String(e.message) }] }; } },
   };
   registerBoothTools(server, ctx);
-  assert.deepEqual([...tools.keys()].sort(), ['booth_status', 'close_booth', 'open_booth', 'play_video', 'publish_to_tv', 'stop_video']);
+  assert.deepEqual([...tools.keys()].sort(), ['booth_status', 'close_booth', 'open_booth', 'play_video', 'publish_to_tv', 'stop_tv_listing', 'stop_video', 'update_tv_listing']);
   const r1 = await tools.get('play_video').fn({ booth_id: 'x', path: '/a', paths: ['/b'] });
   assert.ok(r1.isError && /path or paths/.test(r1.content[0].text));
   const r2 = await tools.get('play_video').fn({ booth_id: 'x', path: '/a' });

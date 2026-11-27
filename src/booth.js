@@ -42,6 +42,7 @@ function videoHook(earlyS) {
   document.createElement = function (t) {
     const e = ce.apply(null, arguments);
     if (String(t).toLowerCase() !== 'video') return e;
+    window.__boothVideos = (window.__boothVideos || []).slice(-3).concat([e]);   // the rebroadcast's video is never in the page
     const note = (k, x) => {
       const ev = window.__boothEv;
       ev.push(Object.assign({ at: Date.now(), k, pos: Math.round(e.currentTime * 10) / 10, dur: Math.round(e.duration || 0), rs: e.readyState, err: e.error ? e.error.code + ':' + String(e.error.message || '').slice(0, 80) : null }, x || {}));
@@ -93,6 +94,73 @@ function pageState() {
     page_version: ver ? ver[1] : '',
     skips: window.__boothSkips || 0,
   };
+}
+
+// Runs INSIDE the host page: gifos.tv orders with the GifOS site's own signing, proof of work and canvas.
+async function tvInPage({ op, seed, rk, f }) {
+  const net = window.GifOS && GifOS.net;
+  const API = String((window.GifOS && GifOS.tvPublish && GifOS.tvPublish.api) || window.GIFOS_TV_API || 'https://gifos.tv').replace(/\/+$/, '');
+  const KEY = 'gifos_tv:' + rk;
+  const [name, v] = rk.split('.');
+  const readListing = async () => {
+    const r = await fetch(API + '/api/l/' + name + '/' + v, { credentials: 'omit', cache: 'no-store' });
+    if (r.status === 404) return null;
+    const j = await r.json().catch(() => ({}));
+    return j.listing || null;
+  };
+  try {
+    if (op === 'read') return { ok: true, listing: await readListing() };
+    if (!net || typeof net.edKeysFromSeedHex !== 'function' || typeof net.edSign !== 'function') return { ok: false, error: 'This GifOS page cannot sign gifos.tv orders.' };
+    const keys = await net.edKeysFromSeedHex(seed);
+    const sign = async (act, extra) => { const sp = JSON.stringify(Object.assign({ act, ts: Date.now(), room: rk, by: 'mcp' }, extra || {})); return { sp, sig: await net.edSign(keys.priv, sp), pub: keys.pubB64 }; };
+    const post = async (w, jt) => { const r = await fetch(API + '/api/order', { method: 'POST', credentials: 'omit', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ w, jt: jt || undefined }) }); const j = await r.json().catch(() => ({})); j.status = r.status; return j; };
+    if (op === 'unlist') {
+      const j = await post(await sign('tvunlist', {}));
+      if (!j.ok && j.status !== 404) return { ok: false, error: 'gifos.tv did not take the stop: ' + (j.error || j.status) };
+      try { localStorage.removeItem(KEY); } catch (e) { /* no storage */ }
+      return { ok: true, listed: false };
+    }
+    // The person check, as the page earns it for gifos.tv.
+    const ticket = net.relayTicket({ relayBase: API + '/api', sid: 'tv' });
+    const dev = Array.from(crypto.getRandomValues(new Uint8Array(6))).map((b) => b.toString(16).padStart(2, '0')).join('');
+    const token = async () => { await ticket.prepare(dev); return ticket.token(dev); };
+    // The thumbnail: a picture file or a still of the Stage, drawn to 640x360 (cover) and kept under 240 KB.
+    let canvas = null;
+    const cover = (src, sw, sh) => { const c = document.createElement('canvas'); c.width = 640; c.height = 360; const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 640, 360); const s = Math.max(640 / sw, 360 / sh); g.drawImage(src, (640 - sw * s) / 2, (360 - sh * s) / 2, sw * s, sh * s); return c; };
+    if (f.thumbB64) {
+      const blob = new Blob([Uint8Array.from(atob(f.thumbB64), (c) => c.charCodeAt(0))]);
+      const bmp = await createImageBitmap(blob).catch(() => null);
+      if (!bmp) return { ok: false, error: 'That thumbnail is not a picture this browser can read.' };
+      canvas = cover(bmp, bmp.width, bmp.height);
+    } else if (f.fromStage) {
+      let best = null, area = 0;
+      for (const vid of Array.from(document.querySelectorAll('video')).concat(window.__boothVideos || [])) {
+        if (!vid.videoWidth || vid.readyState < 2) continue;
+        const a = vid.videoWidth * vid.videoHeight;
+        if (a > area) { area = a; best = vid; }
+      }
+      if (!best) return { ok: false, error: 'Nothing is showing on the Stage yet: play a video first, or give a thumbnail file.' };
+      canvas = cover(best, best.videoWidth, best.videoHeight);
+    }
+    let thumb = '';
+    let jt = await token();
+    if (canvas) {
+      let blob = null;
+      for (const q of [0.85, 0.75, 0.6, 0.45]) { blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', q)); if (blob && blob.size <= 240 * 1024) break; }
+      const bytes = await blob.arrayBuffer();
+      const sha = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map((b) => b.toString(16).padStart(2, '0')).join('');
+      const r = await fetch(API + '/api/thumb', { method: 'POST', credentials: 'omit', headers: { 'content-type': 'image/jpeg', 'x-gifos-jt': jt || '', 'x-gifos-order': JSON.stringify(await sign('tvthumb', { sha })) }, body: bytes });
+      const j = await r.json().catch(() => ({}));
+      if (!j.ok) return { ok: false, error: 'The thumbnail did not upload: ' + (j.error || r.status) };
+      thumb = j.thumb;
+      jt = await token();
+    } else if (f.keepThumb) thumb = f.keepThumb;
+    const j = await post(await sign('tvlist', { title: f.title, desc: f.desc || '', thumb, tip: f.tip || '', pw: f.pw ? 1 : 0 }), jt);
+    if (!j.ok) return { ok: false, error: 'The listing was not published: ' + (j.error || j.status) };
+    // The page's own "listed" mark: from here the page goes on air and keeps the listing live while it hosts.
+    try { localStorage.setItem(KEY, JSON.stringify({ url: j.url, at: Date.now(), delisted: !!j.delisted })); } catch (e) { /* no storage */ }
+    return { ok: true, url: j.url, delisted: !!j.delisted, thumb, listing: await readListing() };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; }
 }
 
 export class BoothPool {
@@ -423,39 +491,28 @@ export class Booth {
 
   async trace(n) { return this.page.evaluate((k) => (window.__boothEv || []).slice(-k), n).catch(() => []); }
 
-  // Lists the broadcast on gifos.tv through the page's own "Publish to GifOS.tv" sheet. After that the page sends the
-  // on-air note, a signed keep-alive every few minutes and the off-air note itself while its host is in the room.
-  async publish({ title, description, thumbnail }) {
+  // gifos.tv listing: the same signed records as the page's own "Publish to GifOS.tv" sheet (js/tv-publish.js), made
+  // in the host page with the GifOS site's own code: orders signed with the room's host key, the person check (proof
+  // of work), the 640x360 JPEG thumbnail drawn on the page's canvas. Then the page's "listed" mark is set, and the page
+  // itself goes on air, sends the keep-alive every few minutes and goes off air when the host leaves.
+  //   f: { title, desc, thumbB64 (picture file bytes) | fromStage, tip, pw, keepThumb }
+  async tvList(f) {
     this.need();
-    const st = await this.read();
-    if (st.tv && st.tv.listed) return { already: true, ...st.tv };
-    await this.ackNotices();
-    const shown = await this.page.waitForFunction(() => { const b = document.getElementById('bc-tv'); return !!(b && !b.hidden); }, null, { timeout: 20000 }).then(() => true, () => false);
-    if (!shown) throw new Error('This GifOS page shows no "Publish to GifOS.tv" button for this broadcast.');
-    await this.page.click('#bc-tv');
-    await this.page.waitForSelector('#tv-title', { timeout: 10000 });
-    await this.page.fill('#tv-title', String(title));
-    await this.page.fill('#tv-desc', String(description || ''));
-    if (thumbnail) {
-      await this.page.setInputFiles('#tv-file', thumbnail);
-      await this.page.waitForFunction(() => !!document.querySelector('#tv-pub .thumb canvas'), null, { timeout: 10000 })
-        .catch(() => { throw new Error('The page could not read that thumbnail picture.'); });
-    } else {
-      await this.page.click('#tv-snap').catch(() => {});
-    }
-    await this.page.click('#tv-go');
-    const done = await this.page.waitForFunction(() => {
-      const s = window.GifOS && GifOS.tvPublish && GifOS.tvPublish._state();
-      if (s && s.listed && s.onAirFor) return { ok: true };
-      const err = document.querySelector('#tv-pub .err');
-      const back = document.querySelector('#tv-pub footer button');
-      return err && err.textContent && back && !document.getElementById('tv-go') ? { ok: false, m: err.textContent } : false;
-    }, null, { timeout: 90000 }).then((h) => h.jsonValue(), () => ({ ok: false, m: 'gifos.tv did not answer in time.' }));
-    await this.page.evaluate(() => { const d = document.getElementById('tv-pub'); const b = d && d.querySelector('footer button.go'); if (b) b.click(); else if (d) d.remove(); }).catch(() => {});
-    if (!done.ok) throw new Error('Publishing to GifOS.tv failed: ' + done.m);
-    const after = await this.read();
-    this.note('listed', { url: after.tv && after.tv.url });
-    return { already: false, ...(after.tv || {}) };
+    const r = await this.page.evaluate(tvInPage, { op: 'list', seed: this.seedHex, rk: this.room + '.' + this.verifier, f });
+    if (!r.ok) throw new Error(r.error);
+    this.note('tv.listed', { url: r.url });
+    return r;
+  }
+  async tvUnlist() {
+    this.need();
+    const r = await this.page.evaluate(tvInPage, { op: 'unlist', seed: this.seedHex, rk: this.room + '.' + this.verifier });
+    if (!r.ok) throw new Error(r.error);
+    this.note('tv.unlisted');
+    return r;
+  }
+  // The listing as gifos.tv shows it to anyone (null when not listed).
+  async tvRead() {
+    return this.page.evaluate(tvInPage, { op: 'read', rk: this.room + '.' + this.verifier }).then((r) => (r && r.ok ? r.listing : null));
   }
 
   async state() {

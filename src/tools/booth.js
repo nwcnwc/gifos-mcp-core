@@ -77,20 +77,68 @@ export function registerBoothTools(server, ctx) {
     inputSchema: { booth_id: boothId },
   }, guarded(async ({ booth_id }) => ok({ booth_id, ...(await boothOf(booth_id).stop()) })));
 
+  // The tip address is not in the public listing: kept beside the booth's profile so an update keeps it.
+  const tipFile = (id) => path.join(cfg.home, 'booth-' + id, 'tv-tip.txt');
+  const keptTip = (id) => { try { return fs.readFileSync(tipFile(id), 'utf8').trim(); } catch (e) { return ''; } };
+  const keepTip = (id, tip) => { try { fs.writeFileSync(tipFile(id), String(tip || '')); } catch (e) { /* the next update asks again */ } };
+  const tipField = z.string().regex(/^0x[0-9a-fA-F]{40}$/).or(z.literal('')).optional().describe('A Base address for tips (0x and 40 hex), public, stored by gifos.tv for later (not shown yet). Empty string clears it.');
+  const thumbFields = {
+    thumbnail_path: z.string().max(4096).optional().describe('A picture file for the thumbnail (JPEG, PNG, WebP); it is drawn to 640x360 on the host page.'),
+    thumbnail_from_stage: z.boolean().optional().describe('Take the thumbnail as a still of what is on the Stage now.'),
+  };
+  const thumbOf = (p) => (p ? readFile(path.resolve(String(p)), 'thumbnail').toString('base64') : '');
+
   server.registerTool('publish_to_tv', {
     title: 'List the broadcast on gifos.tv',
-    description: 'Lists the broadcast on gifos.tv, the public directory of live GifOS broadcasts, with the page\'s own "Publish to GifOS.tv" sheet: a public title, a public description and a thumbnail (thumbnail_path, a picture file; omit to take a still from the Stage). From then on the host page itself tells gifos.tv it is on air, sends a keep-alive every few minutes and goes off air when the host leaves; the booth\'s profile remembers the listing across restarts. A broadcast already listed answers already: true. Everything given here is public.',
+    description: 'Lists the broadcast whose booth is open (a room you host) on gifos.tv, the public directory of live GifOS broadcasts: the same signed listing as the /cast page\'s "Publish to GifOS.tv" button, signed with the room\'s host key on this computer. title and description are public; the thumbnail comes from thumbnail_path or a still of the Stage (the default when no file is given and something plays). password_needed shows a "Password needed" badge. From then on the host page itself tells gifos.tv it is on air, sends a keep-alive every few minutes and goes off air when the host leaves; the booth\'s profile remembers the listing across restarts. Publishing again replaces the listing (use update_tv_listing to change only some fields). Everything given here is public.',
     inputSchema: {
       booth_id: boothId,
       title: z.string().min(1).max(80).describe('The public title.'),
       description: z.string().max(500).optional().describe('The public description (up to 500 characters).'),
-      thumbnail_path: z.string().max(4096).optional().describe('A picture file for the thumbnail (JPEG, PNG, WebP).'),
+      ...thumbFields,
+      tip_address: tipField,
+      password_needed: z.boolean().optional().describe('Show "Password needed" (for a room with a password).'),
     },
-  }, guarded(async ({ booth_id, title, description, thumbnail_path }) => {
-    const thumb = thumbnail_path ? path.resolve(String(thumbnail_path)) : '';
-    if (thumb) readFile(thumb, 'thumbnail');
-    return ok({ booth_id, gifos_tv: await boothOf(booth_id).publish({ title, description, thumbnail: thumb }) });
+  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, password_needed }) => {
+    const b = boothOf(booth_id);
+    const thumbB64 = thumbOf(thumbnail_path);
+    const tip = tip_address || '';
+    const r = await b.tvList({ title, desc: description || '', thumbB64, fromStage: !thumbB64 && thumbnail_from_stage !== false, tip, pw: !!password_needed });
+    keepTip(booth_id, tip);
+    return ok({ booth_id, listed: true, url: r.url, listing: r.listing, note: 'The host page keeps this listing on air while the booth is open.' });
   }));
+
+  server.registerTool('update_tv_listing', {
+    title: 'Change the gifos.tv listing',
+    description: 'Changes only the fields given of the gifos.tv listing of a broadcast whose booth is open: title, description, thumbnail (a file or a still of the Stage), tip address, password badge. The rest stays as listed. A listing on air stays on air.',
+    inputSchema: {
+      booth_id: boothId,
+      title: z.string().min(1).max(80).optional(),
+      description: z.string().max(500).optional(),
+      ...thumbFields,
+      tip_address: tipField,
+      password_needed: z.boolean().optional(),
+    },
+  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, password_needed }) => {
+    const b = boothOf(booth_id);
+    const now = await b.tvRead();
+    if (!now) throw new Error('This broadcast is not listed on gifos.tv. Use publish_to_tv first.');
+    const thumbB64 = thumbOf(thumbnail_path);
+    const tip = tip_address === undefined ? keptTip(booth_id) : tip_address;
+    const r = await b.tvList({
+      title: title || now.title, desc: description === undefined ? (now.desc || '') : description,
+      thumbB64, fromStage: !thumbB64 && thumbnail_from_stage === true, keepThumb: now.thumb || '',
+      tip, pw: password_needed === undefined ? !!now.pw : password_needed,
+    });
+    keepTip(booth_id, tip);
+    return ok({ booth_id, listed: true, url: r.url, listing: r.listing });
+  }));
+
+  server.registerTool('stop_tv_listing', {
+    title: 'Take the broadcast off gifos.tv',
+    description: 'Removes the gifos.tv listing of a broadcast whose booth is open (signed with its host key) and clears the host page\'s listed mark, so the page sends no more keep-alives. The broadcast itself goes on.',
+    inputSchema: { booth_id: boothId },
+  }, guarded(async ({ booth_id }) => ok({ booth_id, ...(await boothOf(booth_id).tvUnlist()) })));
 
   server.registerTool('booth_status', {
     title: 'How the broadcast stands',
