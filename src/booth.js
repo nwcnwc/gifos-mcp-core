@@ -155,12 +155,22 @@ async function tvInPage({ op, seed, rk, f }) {
     }
     let thumb = '';
     let jt = await token();
+    // The thumbnail is checked for sexually explicit content on this computer first, by the GifOS page's own on-device
+    // check (the same one a host's page runs); gifos.tv takes no thumbnail without its verdict. A picture that trips it,
+    // or that could not be checked, is not uploaded and the listing uses the standard picture.
+    let verdict = null, thumbNote = '';
+    if (canvas) {
+      const E = window.GifOS && GifOS.explicit;
+      const r = E ? await E.checkStill(canvas).catch(() => null) : null;
+      if (r && r.ok && r.verdict) verdict = r.verdict;
+      else { canvas = null; thumbNote = r ? 'The thumbnail was not used: it may show nudity or sexual content. The listing uses the standard picture.' : 'The thumbnail was not used: this page could not check it. The listing uses the standard picture.'; }
+    }
     if (canvas) {
       let blob = null;
       for (const q of [0.85, 0.75, 0.6, 0.45]) { blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', q)); if (blob && blob.size <= 240 * 1024) break; }
       const bytes = await blob.arrayBuffer();
       const sha = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map((b) => b.toString(16).padStart(2, '0')).join('');
-      const r = await fetch(API + '/api/thumb', { method: 'POST', credentials: 'omit', headers: { 'content-type': 'image/jpeg', 'x-gifos-jt': jt || '', 'x-gifos-order': JSON.stringify(await sign('tvthumb', { sha })) }, body: bytes });
+      const r = await fetch(API + '/api/thumb', { method: 'POST', credentials: 'omit', headers: { 'content-type': 'image/jpeg', 'x-gifos-jt': jt || '', 'x-gifos-order': JSON.stringify(await sign('tvthumb', { sha, chk: verdict })) }, body: bytes });
       const j = await r.json().catch(() => ({}));
       if (!j.ok) return { ok: false, error: 'The thumbnail did not upload: ' + (j.error || r.status) };
       thumb = j.thumb;
@@ -170,7 +180,7 @@ async function tvInPage({ op, seed, rk, f }) {
     if (!j.ok) return { ok: false, error: 'The listing was not published: ' + (j.error || j.status) };
     // The page's own "listed" mark: from here the page goes on air and keeps the listing live while it hosts.
     try { localStorage.setItem(KEY, JSON.stringify({ url: j.url, at: Date.now(), delisted: !!j.delisted })); } catch (e) { /* no storage */ }
-    return { ok: true, url: j.url, delisted: !!j.delisted, thumb, listing: await readListing() };
+    return { ok: true, url: j.url, delisted: !!j.delisted, thumb: j.thumb != null ? j.thumb : thumb, thumb_note: thumbNote || undefined, listing: await readListing() };
   } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 300) }; }
 }
 
