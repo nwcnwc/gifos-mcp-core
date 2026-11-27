@@ -416,7 +416,14 @@ export class Booth {
       await new Promise((resolve) => {
         const t = setTimeout(resolve, POLL_MS);
         this.wakeFn = () => { clearTimeout(t); this.wakeFn = null; resolve(); };
-        if (this.playing) this.page.waitForFunction(() => { const g = window.__gifosVideo; return !g || !g.rebroadcastForTest || !g.rebroadcastForTest(); }, null, { timeout: POLL_MS, polling: 100 }).then(() => this.wake(), () => {});
+        // In filler mode a person stepping onto the Stage wakes it too, so the booth gives way within a moment.
+        const yieldNow = !!(this.list && this.list.yieldToPeople && !this.yielded);
+        if (this.playing) this.page.waitForFunction((y) => {
+          const g = window.__gifosVideo;
+          if (!g || !g.rebroadcastForTest || !g.rebroadcastForTest()) return true;
+          if (!y || !g.stageInfo) return false;
+          try { const i = g.stageInfo(); return !!(i && i.stagers && i.stagers.some((x) => !x.me)); } catch (e) { return false; }
+        }, yieldNow, { timeout: POLL_MS, polling: 100 }).then(() => this.wake(), () => {});
       });
       this.wakeFn = null;
     }
