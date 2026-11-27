@@ -179,7 +179,9 @@ async function tvInPage({ op, seed, rk, f }) {
 // broadcast go on unchanged, and every button stays visible and clickable.
 export const NO_PAINT_CSS = 'video,canvas,img{visibility:hidden!important}';
 export function noPaintScript() {
-  return 'try{(function(){var add=function(){if(document.getElementById("gifos-no-paint"))return;var s=document.createElement("style");'
+  // gifos_noscreen=1 asks a GifOS page that knows it to hide its own pictures; the CSS covers pages that do not yet.
+  return 'try{localStorage.setItem("gifos_noscreen","1");}catch(e){}'
+    + 'try{(function(){var add=function(){if(document.getElementById("gifos-no-paint"))return;var s=document.createElement("style");'
     + 's.id="gifos-no-paint";s.textContent=' + JSON.stringify(NO_PAINT_CSS) + ';(document.head||document.documentElement).appendChild(s);};'
     + 'if(document.documentElement)add();document.addEventListener("DOMContentLoaded",add);})();}catch(e){}';
 }

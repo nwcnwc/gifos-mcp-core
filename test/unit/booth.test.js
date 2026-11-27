@@ -155,7 +155,7 @@ test('a credentials file is taken once, and again when the file changes (a new p
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
-test('no paint: the script adds one style that hides only video, canvas and img', () => {
+test('no paint: the script sets gifos_noscreen and adds one style that hides only video, canvas and img', () => {
   assert.equal(NO_PAINT_CSS, 'video,canvas,img{visibility:hidden!important}');
   const added = [], listeners = {};
   const doc = {
@@ -165,7 +165,9 @@ test('no paint: the script adds one style that hides only video, canvas and img'
     createElement: () => ({}),
     addEventListener: (ev, f) => { listeners[ev] = f; },
   };
-  new Function('document', noPaintScript())(doc);
+  const ls = {};
+  new Function('document', 'localStorage', noPaintScript())(doc, { setItem: (k, v) => { ls[k] = v; } });
+  assert.equal(ls.gifos_noscreen, '1');
   listeners.DOMContentLoaded();                // the second call finds the style and adds nothing
   assert.equal(added.length, 1);
   assert.equal(added[0].textContent, NO_PAINT_CSS);
