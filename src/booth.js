@@ -176,7 +176,9 @@ async function tvInPage({ op, seed, rk, f }) {
       thumb = j.thumb;
       jt = await token();
     } else if (f.keepThumb) thumb = f.keepThumb;
-    const j = await post(await sign('tvlist', { title: f.title, desc: f.desc || '', thumb, tip: f.tip || '', pw: f.pw ? 1 : 0 }), jt);
+    // The kind, as the page shows it: Prerecorded while the Rebroadcast plays (the page's own on-air notes keep it current).
+    const kind = document.body.classList.contains('rb-on') ? 'pre' : 'live';
+    const j = await post(await sign('tvlist', { title: f.title, desc: f.desc || '', thumb, tip: f.tip || '', pw: f.pw ? 1 : 0, cat: f.cat || 'chat', tags: Array.isArray(f.tags) ? f.tags.slice(0, 3) : [], lang: f.lang || 'en', k: kind }), jt);
     if (!j.ok) return { ok: false, error: 'The listing was not published: ' + (j.error || j.status) };
     // The page's own "listed" mark: from here the page goes on air and keeps the listing live while it hosts.
     try { localStorage.setItem(KEY, JSON.stringify({ url: j.url, at: Date.now(), delisted: !!j.delisted })); } catch (e) { /* no storage */ }
@@ -552,7 +554,7 @@ export class Booth {
   // in the host page with the GifOS site's own code: orders signed with the room's host key, the person check (proof
   // of work), the 640x360 JPEG thumbnail drawn on the page's canvas. Then the page's "listed" mark is set, and the page
   // itself goes on air, sends the keep-alive every few minutes and goes off air when the host leaves.
-  //   f: { title, desc, thumbB64 (picture file bytes) | fromStage, tip, pw, keepThumb }
+  //   f: { title, desc, thumbB64 (picture file bytes) | fromStage, tip, pw, keepThumb, cat, tags, lang }
   async tvList(f) {
     this.need();
     const r = await this.page.evaluate(tvInPage, { op: 'list', seed: this.seedHex, rk: this.room + '.' + this.verifier, f });
