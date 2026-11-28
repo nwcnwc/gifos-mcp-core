@@ -160,6 +160,13 @@ async function tvInPage({ op, seed, rk, f }) {
     // or that could not be checked, is not uploaded and the listing uses the standard picture.
     let verdict = null, thumbNote = '';
     if (canvas) {
+      // The page loads its check only when a person picks a picture; the booth loads it the same way the page does (from
+      // beside the page's tv-publish.js, else the site's /js/), so a booth thumbnail is checked, not dropped as unchecked.
+      if (window.GifOS && !GifOS.explicit) {
+        const tp = Array.from(document.scripts).map((x) => x.src).find((u) => /\/tv-publish\.js(\?|$)/.test(u || ''));
+        const src = tp ? tp.replace(/tv-publish\.js(\?.*)?$/, 'gifos-explicit.js') : new URL('/js/gifos-explicit.js', location.href).href;
+        await new Promise((res) => { const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = res; document.head.appendChild(sc); });
+      }
       const E = window.GifOS && GifOS.explicit;
       const r = E ? await E.checkStill(canvas).catch(() => null) : null;
       if (r && r.ok && r.verdict) verdict = r.verdict;
