@@ -7,7 +7,7 @@
 // The Stage has several spots (the page's stage cap). A bot takes a free spot
 // when no bot is up there, and never moves a human off.
 
-export const STAGE_GREETING = "Hi {names}, welcome to GifOS! I'm {bot}, a bot. To ask me anything, raise your hand and I'll bring you up to the Stage. Tip: to hear only the Stage, turn down My row and The stadium in Settings > Sound mix.";
+export const STAGE_GREETING = "Hi {names}, welcome to GifOS! I'm {bot}, a bot. To ask me anything, ask in chat, or raise your hand to talk. Tip: to hear only the Stage, turn down My row and The stadium in Settings > Sound mix.";
 
 // Said by the person on the Stage when they are finished. Matched as phrases, not as pieces of longer words.
 export const STAGE_DONE_WORDS = ['thanks', 'thank you', 'bye', 'goodbye', "that's all", 'thats all'];

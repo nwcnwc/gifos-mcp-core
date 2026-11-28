@@ -149,7 +149,7 @@ test('the greeting is only from the staged bot, by first name, and names the sou
   plan(at([{ id: 'x', name: 'Old' }], false), p, off, 1000);
   plan(at([{ id: 'x', name: 'Old' }, { id: 'a', name: 'Ana' }], false), p, off, 2000);
   assert.equal(plan(at([{ id: 'x', name: 'Old' }, { id: 'a', name: 'Ana' }], false), p, off, 30000).greet, null);
-  // A co-admin who is the one on the stage does greet.
+  // A co-admin on the stage does NOT greet (the lead does: one greeter, never two bots welcoming the same person).
   const co = Object.assign(newMemory(), { credLoaded: true });
   const sib = [{ id: 'mia', name: 'Mia', admin: true }];
   const pass = (people, me_on) => held(people, { subscription: { held: true, via: 'pass' }, stage: { me_on } });
@@ -157,7 +157,27 @@ test('the greeting is only from the staged bot, by first name, and names the sou
   plan(pass(sib.concat([{ id: 'a', name: 'Ana' }]), true), pol({ stage: true, rank: 1 }), co, 2000);
   r = plan(pass(sib.concat([{ id: 'a', name: 'Ana' }]), true), pol({ stage: true, rank: 1 }), co, 12000);
   assert.equal(r.role, 'coadmin');
-  assert.deepEqual(r.greet, ['Ana']);
+  assert.equal(r.greet, null);
+});
+
+test('a person is greeted once: a rejoin or embed reload (new seat id, same name) is not greeted again', () => {
+  const p = pol({ stage: true });
+  const m = Object.assign(newMemory(), { credLoaded: true });
+  const at = (people) => held(people, { stage: { me_on: true } });
+  const base = [{ id: 'x', name: 'Old' }];
+  plan(at(base), p, m, 1000);
+  plan(at(base.concat([{ id: 'e1', name: 'Embed Eve' }])), p, m, 2000);
+  assert.deepEqual(plan(at(base.concat([{ id: 'e1', name: 'Embed Eve' }])), p, m, 13000).greet, ['Embed Eve']);
+  // she re-enters four times with a new seat id each time
+  let t = 30000;
+  for (const id of ['e2', 'e3', 'e4', 'e5']) {
+    plan(at(base.concat([{ id, name: 'Embed Eve' }])), p, m, t);
+    assert.equal(plan(at(base.concat([{ id, name: 'Embed Eve' }])), p, m, t + 15000).greet, null, id);
+    t += 40000;
+  }
+  // a different person is still greeted
+  plan(at(base.concat([{ id: 'n1', name: 'Nia' }])), p, m, t);
+  assert.deepEqual(plan(at(base.concat([{ id: 'n1', name: 'Nia' }])), p, m, t + 15000).greet, ['Nia']);
 });
 
 test('hands are first-raised first-served, one at a time, and not when the stage is full', () => {

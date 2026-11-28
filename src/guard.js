@@ -71,6 +71,7 @@ const GREET_EVERY_MS = 12000;   // an open room's chat is in slow mode: one line
 // one guard tick (3 s) after it loads its credentials, plus one page beat (4 s) for its signed orders to reach the lead,
 // plus the lead's next tick (3 s). So a sibling is not greeted, whatever its name.
 const GREET_SETTLE_MS = 10000;
+const GREETED_TTL_MS = 6 * 3600 * 1000;   // the same name is not greeted again for this long
 const RANK_DELAY_MS = 60000;    // with nobody holding the room, rank N waits N x this before taking it
 const SIBLING_GONE_MS = 45000;  // the lead's seat gone this long (+20 s per rank): take the ticket back
 const RETAKE_EVERY_MS = 60000;  // a pass's moved ticket: one fresh join of the room per this long (a join takes ~15 s)
@@ -106,6 +107,7 @@ export function normalizePolicy(p, base) {
     greet: p.greet === false ? false : (greetCustom ? p.greet : (stage.stage ? STAGE_GREETING : defaultGreeting(p.blur_all !== false))),
     rank,
     handler: rel(p.handler),
+    chat_answers: p.chat_answers !== false,
     voice: typeof p.voice === 'string' && /^[a-z]{2}_[a-z0-9]+$/i.test(p.voice.trim()) ? p.voice.trim() : '',
     picture: rel(p.picture),
     name: typeof p.name === 'string' ? p.name.trim().slice(0, 40) : '',
@@ -287,8 +289,8 @@ function leadDuties(state, policy, mem, now, lead, act, out) {
   }
   const people = state.people || [];
   // Stage off: the lead greets, and a co-admin does not (it does not greet them later either).
-  // Stage on: the seat that is on the Stage greets, whether or not it is the lead.
-  const mayGreet = policy.stage ? !!(state.stage && state.stage.me_on) : lead;
+  // Stage on: the lead greets, and only while it is on the Stage (one greeter, so two bots never both welcome a person).
+  const mayGreet = policy.stage ? (lead && !!(state.stage && state.stage.me_on)) : lead;
   if (!mayGreet) { if (mem.seen) for (const p of people) mem.seen.add(p.id); mem.queue = []; return; }
   if (!mem.seen) { mem.seen = new Set(people.map((p) => p.id)); return; }   // who was here when this bot became the lead: not newcomers
   for (const p of people) {
@@ -298,13 +300,18 @@ function leadDuties(state, policy, mem, now, lead, act, out) {
   // Greet only who is still here and not an admin (a sibling, or the room's host).
   const guests = new Set(people.filter((p) => p.admin !== true).map((p) => p.id));
   mem.queue = mem.queue.filter((q) => !q.id || guests.has(q.id));
+  // One greeting per PERSON: a rejoin or an embed reload is a new seat id with the same name, and is not greeted again.
+  if (!mem.greeted) mem.greeted = new Map();
+  mem.queue = mem.queue.filter((q) => { const t = mem.greeted.get(nameKey(q.name)); return t === undefined || now - t >= GREETED_TTL_MS; });
   const due = mem.queue.filter((q) => now - q.at >= GREET_SETTLE_MS);
   if (policy.greet && due.length && now - mem.lastGreet >= GREET_EVERY_MS) {
     mem.lastGreet = now;
     mem.queue = mem.queue.filter((q) => now - q.at < GREET_SETTLE_MS);
     out.greet = due.map((q) => q.name);
+    for (const q of due) mem.greeted.set(nameKey(q.name), now);
   }
 }
+const nameKey = (n) => String(n || '').trim().toLowerCase();
 
 export function greetingText(template, names, bot) {
   const clean = names.map((n) => String(n || '').replace(/https?:\/\/\S+/gi, '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24) || 'friend');
@@ -364,7 +371,7 @@ export class RoomGuard {
       const { meeting } = await this.ctx.joinByLink(this.policy.link, this.policy.join_password, this.policy.topic || 'guard', undefined, { guard: true });
       this.meetingId = meeting.meeting_id; this.joinFails = 0;
       // A new seat starts over, but keeps the clock of its last fresh join for a moved pass (one a minute, never a storm).
-      this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake });
+      this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake, greeted: this.mem.greeted });
       this.note('guard.joined', { link: this.policy.link.replace(/[?#&]pw=[^&]*/, '') });
       // A handler needs the room's lines. With GIFOS_ALWAYS_TRANSCRIBE=0 the join starts no poll, so the handler and
       // the Stage's "thanks" never heard anyone (seen live 2026-11-24). Poll the lines the page already keeps (chat and
@@ -402,7 +409,7 @@ export class RoomGuard {
         let snap = null;
         try { snap = await this.ctx.bot.room(m.session_id, 'stage.get', {}); }
         catch (e) { this.note('guard.stage_failed', { text: String((e && e.message) || e).slice(0, 200) }); }
-        if (snap) { stageNow = stageView(st, snap, this.botName()); this.mem.names = stageNow.people.map((q) => q.name); st.stage = { me_on: stageNow.me_on }; }
+        if (snap) { stageNow = stageView(st, snap, this.botName()); this.mem.names = stageNow.people.map((q) => q.name); this.mem.stageIds = stageNow.on_stage.filter((q) => !q.bot).map((q) => q.id); st.stage = { me_on: stageNow.me_on }; }
         else st.stage = { me_on: false };
       }
       // A new live release on the site: reload now if it is this seat's turn (siteTurn), else keep the room meanwhile.
@@ -461,7 +468,7 @@ export class RoomGuard {
     catch (e) { this.note('guard.action', { op: 'guard.site_reload', why: 'leave', ok: false, error: String((e && e.message) || e).slice(0, 200) }); }
     await site.refresh(why).catch((e) => this.note('guard.action', { op: 'guard.site_reload', why: 'reload', ok: false, error: String((e && e.message) || e).slice(0, 200) }));
     this.meetingId = null; this.nextJoin = 0;
-    this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake });
+    this.mem = Object.assign(newMemory(), { role: 'waiting', lastRetake: this.mem.lastRetake, greeted: this.mem.greeted });
   }
   // Leave the room and join it again at the next tick: a page start, the one way a GifOS page takes back a pass that
   // moved to another meeting. The new seat loads the credentials and proves its key again (plan() from 'waiting').
@@ -493,7 +500,7 @@ export class RoomGuard {
     await this.ctx.bot.interject(m.session_id, text);
   }
   // Every chat or spoken line from a person in this room reaches the handler, on the lead only (one answer per line).
-  // Stage on: only the bot that is on the Stage, and only the person it promoted. The join greeting is the other
+  // Stage on: the bot on the Stage answers the person it promoted; every other chat line goes to the lead (msg.open). The join greeting is the other
   // thing this bot says. a line with a seat id is matched by id; one without is matched by name only
   // while the name is unique in the room (shouldAnswer).
   hookLines() {
@@ -503,8 +510,14 @@ export class RoomGuard {
       if (!row || row.meeting_id !== this.meetingId || ours().has(row.speaker) || (row.kind !== 'chat' && row.kind !== 'speech')) return;
       const msg = { text: row.text, from: row.speaker, fromId: row.speaker_id || '', kind: row.kind, at: row.ts };
       if (this.policy.stage) {
-        if (!shouldAnswer(this.mem, msg)) return;
-        if (!noteLine(this.mem, msg, this.policy).answer) return;
+        if (shouldAnswer(this.mem, msg)) {
+          if (!noteLine(this.mem, msg, this.policy).answer) return;
+        } else if (this.mem.role === 'lead' && this.policy.chat_answers !== false && !this.onStageLine(msg)) {
+          // Anyone's chat (a seated guest, an embed viewer) goes to the LEAD alone, so one bot answers each line; the
+          // handler decides whether it reads as a question and enforces the per-person limits. A person on the Stage
+          // is answered by the bot that promoted them (above).
+          msg.open = true;
+        } else return;
       } else if (this.mem.role !== 'lead') return;
       const room = { meeting_id: this.meetingId, link: this.policy.link, sendChat: (t) => this.sendChat(String(t).slice(0, 2000)), say: (t) => this.say(String(t).slice(0, 2000)) };
       Promise.resolve().then(() => this.handler(msg, room))
@@ -512,6 +525,10 @@ export class RoomGuard {
     };
     const off = this.ctx.transcript.onLine(fn);
     this.unhook = typeof off === 'function' ? off : null;
+  }
+  onStageLine(msg) {
+    const ids = this.mem.stageIds || [];
+    return !!msg.fromId && ids.some((i) => String(i) === String(msg.fromId) || String(i).startsWith(String(msg.fromId)) || String(msg.fromId).startsWith(String(i)));
   }
   status() {
     const site = this.ctx.site;
