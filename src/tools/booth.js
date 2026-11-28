@@ -88,10 +88,18 @@ export function registerBoothTools(server, ctx) {
     thumbnail_from_stage: z.boolean().optional().describe('Take the thumbnail as a still of what is on the Stage now.'),
   };
   const thumbOf = (p) => (p ? readFile(path.resolve(String(p)), 'thumbnail').toString('base64') : '');
+  // How viewers find the listing on gifos.tv: one category from its fixed list, up to 3 tags, the language. The kind
+  // (Live, Prerecorded while a video plays, Bot) is detected by the host page itself.
+  const CATS = ['talk', 'music', 'gaming', 'faith', 'education', 'news', 'sports', 'tech', 'art', 'business', 'film', 'chat'];
+  const findFields = {
+    category: z.enum(CATS).optional().describe('One category: talk (Talk & Podcasts), music, gaming, faith (Faith & Community), education (Education & How-to), news (News & Politics), sports, tech (Tech & AI), art (Art & Making), business, film (Film & Clips, prerecorded), chat (Just Chatting, the default).'),
+    tags: z.array(z.string().min(1).max(24)).max(3).optional().describe('Up to 3 short public tags (24 characters each), e.g. ["classic films", "noir"].'),
+    language: z.string().regex(/^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/).optional().describe('The language spoken, as a language tag (en, es, pt-BR...). Default en.'),
+  };
 
   server.registerTool('publish_to_tv', {
     title: 'List the broadcast on gifos.tv',
-    description: 'Lists the broadcast whose booth is open (a room you host) on gifos.tv, the public directory of live GifOS broadcasts: the same signed listing as the /cast page\'s "Publish to GifOS.tv" button, signed with the room\'s host key on this computer. title and description are public; the thumbnail comes from thumbnail_path or a still of the Stage (the default when no file is given and something plays). pw_needed shows a "Password needed" badge. From then on the host page itself tells gifos.tv it is on air, sends a keep-alive every few minutes and goes off air when the host leaves; the booth\'s profile remembers the listing across restarts. Publishing again replaces the listing (use update_tv_listing to change only some fields). Everything given here is public.',
+    description: 'Lists the broadcast whose booth is open (a room you host) on gifos.tv, the public directory of live GifOS broadcasts: the same signed listing as the /cast page\'s "Publish to GifOS.tv" button, signed with the room\'s host key on this computer. title and description are public; the thumbnail comes from thumbnail_path or a still of the Stage (the default when no file is given and something plays). pw_needed shows a "Password needed" badge. category, tags and language are how viewers find it (browse rows, category pages, search); the Live / Prerecorded / Bot badge is detected by the page. From then on the host page itself tells gifos.tv it is on air, sends a keep-alive every few minutes and goes off air when the host leaves; the booth\'s profile remembers the listing across restarts. Publishing again replaces the listing (use update_tv_listing to change only some fields). Everything given here is public.',
     inputSchema: {
       booth_id: boothId,
       title: z.string().min(1).max(80).describe('The public title.'),
@@ -99,19 +107,20 @@ export function registerBoothTools(server, ctx) {
       ...thumbFields,
       tip_address: tipField,
       pw_needed: z.boolean().optional().describe('Show "Password needed" (for a room with a password).'),
+      ...findFields,
     },
-  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, pw_needed }) => {
+  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, pw_needed, category, tags, language }) => {
     const b = boothOf(booth_id);
     const thumbB64 = thumbOf(thumbnail_path);
     const tip = tip_address || '';
-    const r = await b.tvList({ title, desc: description || '', thumbB64, fromStage: !thumbB64 && thumbnail_from_stage !== false, tip, pw: !!pw_needed });
+    const r = await b.tvList({ title, desc: description || '', thumbB64, fromStage: !thumbB64 && thumbnail_from_stage !== false, tip, pw: !!pw_needed, cat: category || 'chat', tags: tags || [], lang: language || 'en' });
     keepTip(booth_id, tip);
     return ok({ booth_id, listed: true, url: r.url, listing: r.listing, note: 'The host page keeps this listing on air while the booth is open.' });
   }));
 
   server.registerTool('update_tv_listing', {
     title: 'Change the gifos.tv listing',
-    description: 'Changes only the fields given of the gifos.tv listing of a broadcast whose booth is open: title, description, thumbnail (a file or a still of the Stage), tip address, password badge. The rest stays as listed. A listing on air stays on air.',
+    description: 'Changes only the fields given of the gifos.tv listing of a broadcast whose booth is open: title, description, thumbnail (a file or a still of the Stage), tip address, password badge, category, tags, language. The rest stays as listed. A listing on air stays on air.',
     inputSchema: {
       booth_id: boothId,
       title: z.string().min(1).max(80).optional(),
@@ -119,8 +128,9 @@ export function registerBoothTools(server, ctx) {
       ...thumbFields,
       tip_address: tipField,
       pw_needed: z.boolean().optional(),
+      ...findFields,
     },
-  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, pw_needed }) => {
+  }, guarded(async ({ booth_id, title, description, thumbnail_path, thumbnail_from_stage, tip_address, pw_needed, category, tags, language }) => {
     const b = boothOf(booth_id);
     const now = await b.tvRead();
     if (!now) throw new Error('This broadcast is not listed on gifos.tv. Use publish_to_tv first.');
@@ -130,6 +140,7 @@ export function registerBoothTools(server, ctx) {
       title: title || now.title, desc: description === undefined ? (now.desc || '') : description,
       thumbB64, fromStage: !thumbB64 && thumbnail_from_stage === true, keepThumb: now.thumb || '',
       tip, pw: pw_needed === undefined ? !!now.pw : pw_needed,
+      cat: category || now.cat || 'chat', tags: tags || now.tags || [], lang: language || now.lang || 'en',
     });
     keepTip(booth_id, tip);
     return ok({ booth_id, listed: true, url: r.url, listing: r.listing });
